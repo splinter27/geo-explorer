@@ -40,6 +40,8 @@
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
         }
+        
+        /* Media Query to prevent panel from sliding offscreen on Desktop */
         @media (max-width: 767px) {
             .bottom-sheet.collapsed { transform: translateY(calc(100% - 60px)); }
         }
@@ -93,7 +95,7 @@
         <p class="text-slate-500 mt-2">Loading Map Data...</p>
     </div>
 
-    <div id="sidebar" class="bottom-sheet collapsed fixed md:relative bottom-0 left-0 w-full md:w-[420px] bg-white h-[85vh] md:h-screen z-[1000] md:z-20 flex flex-col rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-slate-200 shrink-0">
+    <div id="sidebar" class="bottom-sheet fixed md:relative bottom-0 left-0 w-full md:w-[420px] bg-white h-[85vh] md:h-screen z-[1000] md:z-20 flex flex-col rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-slate-200 shrink-0">
         
         <!-- Mobile Drag Handle -->
         <div id="drag-handle" class="w-full h-[60px] md:hidden flex items-center justify-center cursor-pointer">
@@ -204,13 +206,24 @@
                     <div id="fc-overlay" class="absolute inset-0 bg-slate-900/80 rounded-xl flex flex-col items-center justify-center text-white p-6 opacity-0 transition-opacity duration-300 pointer-events-none">
                         <h2 id="fc-answer-name" class="text-3xl font-bold text-center mb-2 drop-shadow-md">---</h2>
                         <p id="fc-answer-capital" class="text-lg text-slate-300 drop-shadow-md"><i class="fa-solid fa-building-columns"></i> ---</p>
-                        <p class="mt-4 text-geo-orange font-bold drop-shadow">+5 XP</p>
+                        <p id="fc-xp-award-text" class="mt-4 text-geo-orange font-bold drop-shadow">+10 XP</p>
                     </div>
                 </div>
                 
-                <button id="btn-reveal" onclick="revealFlashcard()" class="w-full py-4 bg-geo-orange hover:bg-geo-orangeDark text-white rounded-xl font-bold text-lg transition-colors shadow-lg mb-4">
-                    Reveal Answer
-                </button>
+                <div id="fc-input-area" class="w-full mb-4">
+                    <input type="text" id="fc-guess" onkeypress="if(event.key === 'Enter') checkFlashcardAnswer()" placeholder="Type country name..." class="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-geo-orange text-center text-lg font-semibold shadow-inner transition-all">
+                    <div id="fc-feedback" class="text-center font-bold text-sm mt-2 hidden"></div>
+                </div>
+
+                <div class="flex gap-3 w-full mb-4" id="fc-action-buttons">
+                    <button onclick="checkFlashcardAnswer()" class="flex-1 py-3 bg-geo-orange hover:bg-geo-orangeDark text-white rounded-xl font-bold transition-colors shadow-md">
+                        Submit Answer
+                    </button>
+                    <button onclick="revealFlashcard()" class="flex-1 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold transition-colors shadow-sm">
+                        Give Up
+                    </button>
+                </div>
+                
                 <button id="btn-next-fc" onclick="nextFlashcard()" class="w-full py-4 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-lg transition-colors shadow-lg hidden">
                     Next Flag <i class="fa-solid fa-arrow-right"></i>
                 </button>
@@ -220,6 +233,41 @@
     </div>
 
     <div id="map" class="flex-1 z-10 relative cursor-crosshair"></div>
+
+    <!-- Map Controls Overlay -->
+    <div id="map-controls-panel" class="absolute top-4 left-4 right-14 md:left-[444px] md:right-auto z-[1000] flex flex-col gap-2 pointer-events-none">
+        <div class="pointer-events-auto bg-white/95 backdrop-blur-sm shadow-lg border border-slate-200 rounded-xl p-2 md:p-3 flex flex-wrap gap-2 md:gap-3 items-center">
+            
+            <!-- Search -->
+            <div class="relative flex items-center">
+                <input type="text" id="country-search" placeholder="Search country..." class="pl-3 pr-8 py-2 bg-slate-100 border border-slate-200 rounded-lg focus:ring-2 focus:ring-geo-orange outline-none text-sm w-36 md:w-48 transition-all" onkeypress="if(event.key === 'Enter') searchCountry()">
+                <button onclick="searchCountry()" class="absolute right-2 text-slate-400 hover:text-geo-orange transition-colors cursor-pointer">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </button>
+            </div>
+
+            <!-- Continent Dropdown -->
+            <select id="continent-select" onchange="filterContinent()" class="py-2 px-2 md:px-3 bg-slate-100 border border-slate-200 rounded-lg focus:ring-2 focus:ring-geo-orange outline-none text-sm cursor-pointer text-slate-700 font-semibold">
+                <option value="">🌎 Global View</option>
+                <option value="Africa">Africa</option>
+                <option value="Americas">Americas</option>
+                <option value="Asia">Asia</option>
+                <option value="Europe">Europe</option>
+                <option value="Oceania">Oceania</option>
+            </select>
+
+            <!-- Reset Button -->
+            <button onclick="resetMap()" class="py-2 px-3 md:px-4 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm flex items-center gap-2">
+                <i class="fa-solid fa-rotate-left"></i> <span class="hidden md:inline">Reset</span>
+            </button>
+        </div>
+        
+        <!-- Toast Message Container -->
+        <div id="toast-message" class="hidden pointer-events-auto bg-red-100 text-red-800 px-4 py-3 rounded-lg shadow-md border border-red-200 text-sm font-semibold flex items-center justify-between transition-opacity duration-300 w-full max-w-[320px]">
+            <span><i class="fa-solid fa-circle-exclamation mr-2"></i> <span id="toast-text">Not found</span></span>
+            <button onclick="closeToast()" class="text-red-500 hover:text-red-700 ml-3"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+    </div>
 
     <script>
         // Game State
@@ -332,6 +380,25 @@
             }
         }
 
+        // Helper Function to fix the famous Natural Earth "-99" bug for countries with overseas territories
+        function getCountryCode(props) {
+            let code = props.ISO_A3 || props["ISO3166-1-Alpha-3"] || props.iso_a3;
+            
+            // The Natural Earth dataset assigns '-99' to some countries like France & Norway
+            if (code === "-99") {
+                code = props.ADM0_A3 || props.adm0_a3; // Look for alternative 3-letter code
+                if (!code) {
+                    // Manual fallbacks just in case
+                    const name = (props.ADMIN || props.name || props.admin || '').toLowerCase();
+                    if (name === "france") code = "FRA";
+                    else if (name === "norway") code = "NOR";
+                    else if (name.includes("somaliland")) code = "SOM";
+                    else if (name.includes("kosovo")) code = "UNK";
+                }
+            }
+            return code || "UNK";
+        }
+
         function getDefaultStyle(feature) {
             return {
                 fillColor: '#e2e8f0', // slate-200
@@ -363,19 +430,41 @@
         function highlightFeatureHover(e) {
             const layer = e.target;
             const props = layer.feature.properties || {};
-            const code = props.ISO_A3 || props["ISO3166-1-Alpha-3"] || props.iso_a3;
+            const code = getCountryCode(props);
             
             if (state.activeCountryCode !== code) {
                 layer.setStyle({ fillOpacity: 0.6, fillColor: '#cbd5e1' });
             }
         }
 
+        const CONTINENT_MAP = {
+            'Africa': ['DZA', 'AGO', 'BEN', 'BWA', 'BFA', 'BDI', 'CPV', 'CMR', 'CAF', 'TCD', 'COM', 'COG', 'COD', 'DJI', 'EGY', 'GNQ', 'ERI', 'SWZ', 'ETH', 'GAB', 'GMB', 'GHA', 'GIN', 'GNB', 'CIV', 'KEN', 'LSO', 'LBR', 'LBY', 'MDG', 'MWI', 'MLI', 'MRT', 'MUS', 'MAR', 'MOZ', 'NAM', 'NER', 'NGA', 'RWA', 'STP', 'SEN', 'SYC', 'SLE', 'SOM', 'ZAF', 'SSD', 'SDN', 'TZA', 'TGO', 'TUN', 'UGA', 'ZMB', 'ZWE'],
+            'Asia': ['AFG', 'ARM', 'AZE', 'BHR', 'BGD', 'BTN', 'BRN', 'KHM', 'CHN', 'CYP', 'GEO', 'IND', 'IDN', 'IRN', 'IRQ', 'ISR', 'JPN', 'JOR', 'KAZ', 'KWT', 'KGZ', 'LAO', 'LBN', 'MYS', 'MDV', 'MNG', 'MMR', 'NPL', 'PRK', 'OMN', 'PAK', 'PSE', 'PHL', 'QAT', 'SAU', 'SGP', 'KOR', 'LKA', 'SYR', 'TWN', 'TJK', 'THA', 'TLS', 'TUR', 'TKM', 'ARE', 'UZB', 'VNM', 'YEM'],
+            'Europe': ['ALB', 'AND', 'AUT', 'BLR', 'BEL', 'BIH', 'BGR', 'HRV', 'CZE', 'DNK', 'EST', 'FIN', 'FRA', 'DEU', 'GRC', 'HUN', 'ISL', 'IRL', 'ITA', 'XKX', 'LVA', 'LIE', 'LTU', 'LUX', 'MLT', 'MDA', 'MCO', 'MNE', 'NLD', 'MKD', 'NOR', 'POL', 'PRT', 'ROU', 'RUS', 'SMR', 'SRB', 'SVK', 'SVN', 'ESP', 'SWE', 'CHE', 'UKR', 'GBR', 'VAT'],
+            'Americas': ['ATG', 'ARG', 'BHS', 'BRB', 'BLZ', 'BOL', 'BRA', 'CAN', 'CHL', 'COL', 'CRI', 'CUB', 'DMA', 'DOM', 'ECU', 'SLV', 'GRD', 'GTM', 'GUY', 'HTI', 'HND', 'JAM', 'MEX', 'NIC', 'PAN', 'PRY', 'PER', 'KNA', 'LCA', 'VCT', 'SUR', 'TTO', 'USA', 'URY', 'VEN'],
+            'Oceania': ['AUS', 'FJI', 'KIR', 'MHL', 'FSM', 'NRU', 'NZL', 'PLW', 'PNG', 'WSM', 'SLB', 'TON', 'TUV', 'VUT']
+        };
+
         function resetHighlightHover(e) {
             const layer = e.target;
             const props = layer.feature.properties || {};
-            const code = props.ISO_A3 || props["ISO3166-1-Alpha-3"] || props.iso_a3;
+            const code = getCountryCode(props);
             
             if (state.activeCountryCode !== code) {
+                const selectedContinent = document.getElementById('continent-select').value;
+                if (selectedContinent) {
+                    const region = props.CONTINENT || props.REGION_UN || "Unknown";
+                    let isMatch = region.includes(selectedContinent) || (CONTINENT_MAP[selectedContinent] && CONTINENT_MAP[selectedContinent].includes(code));
+                    if (isMatch) {
+                        layer.setStyle({
+                            color: '#0f172a',
+                            weight: 2,
+                            fillColor: '#f97316',
+                            fillOpacity: 0.3
+                        });
+                        return;
+                    }
+                }
                 state.geoLayer.resetStyle(layer);
             }
         }
@@ -384,7 +473,7 @@
         async function handleCountryClick(e) {
             const layer = e.target;
             const props = layer.feature.properties || {};
-            const cca3 = props.ISO_A3 || props["ISO3166-1-Alpha-3"] || props.iso_a3 || "UNK";
+            const cca3 = getCountryCode(props);
             const countryName = props.ADMIN || props.name || props.admin || 'Unknown Region';
             
             let countryData = state.countriesMap.get(cca3);
@@ -592,7 +681,7 @@
                 state.geoLayer && state.geoLayer.getLayers().some(l => {
                     const props = l.feature && l.feature.properties;
                     if (!props) return false;
-                    const layerCode = props.ISO_A3 || props["ISO3166-1-Alpha-3"] || props.iso_a3;
+                    const layerCode = getCountryCode(props);
                     return layerCode === code;
                 })
             );
@@ -687,10 +776,12 @@
 
         function nextFlashcard() {
             const codes = Array.from(state.countriesMap.keys());
-            const randomCode = codes[Math.floor(Math.random() * codes.length)];
+            let validCodes = codes.filter(code => code !== 'UNK' && code !== '-99');
+            if(validCodes.length === 0) validCodes = codes;
+
+            const randomCode = validCodes[Math.floor(Math.random() * validCodes.length)];
             let data = state.countriesMap.get(randomCode);
             
-            // Absolute fallback to ensure data is never undefined
             if (!data) {
                 data = Array.from(state.countriesMap.values())[0];
             }
@@ -700,30 +791,90 @@
             document.getElementById('fc-flag').src = data.flags.png;
             document.getElementById('fc-overlay').style.opacity = '0';
             
-            document.getElementById('btn-reveal').classList.remove('hidden');
+            // Reset input and UI
+            const guessInput = document.getElementById('fc-guess');
+            guessInput.value = '';
+            guessInput.disabled = false;
+            document.getElementById('fc-feedback').classList.add('hidden');
+            document.getElementById('fc-action-buttons').classList.remove('hidden');
             document.getElementById('btn-next-fc').classList.add('hidden');
+            
+            // Auto-focus input on desktop
+            if (window.innerWidth >= 768) {
+                setTimeout(() => guessInput.focus(), 100);
+            }
+        }
+
+        function checkFlashcardAnswer() {
+            const guessInput = document.getElementById('fc-guess');
+            const guess = guessInput.value.trim().toLowerCase();
+            const actual = state.flashcardCurrent.name.common.toLowerCase();
+            const feedback = document.getElementById('fc-feedback');
+            
+            if (!guess) return; // Do nothing if input is empty
+            
+            feedback.classList.remove('hidden', 'text-green-600', 'text-red-600', 'text-slate-500');
+            
+            if (guess === actual) {
+                // Correct!
+                const earnedXP = 10;
+                addXP(earnedXP);
+                
+                feedback.classList.add('text-green-600');
+                feedback.innerHTML = `<i class="fa-solid fa-circle-check"></i> Correct! +${earnedXP} XP`;
+                guessInput.disabled = true;
+                
+                showFlashcardAnswer(true);
+                
+                // Confetti and floating XP from the center of the card
+                const card = document.getElementById('flashcard-container').getBoundingClientRect();
+                showFloatingXP(earnedXP, card.left + card.width/2, card.top + card.height/2);
+                confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 }, colors: ['#22c55e', '#f97316', '#ffffff'] });
+            } else {
+                // Incorrect
+                const penalty = -5;
+                addXP(penalty);
+                
+                feedback.classList.add('text-red-600');
+                feedback.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Incorrect. ${penalty} XP`;
+                
+                // Shake the input box
+                guessInput.classList.remove('shake-animation');
+                void guessInput.offsetWidth; // Trigger reflow
+                guessInput.classList.add('shake-animation');
+            }
         }
 
         function revealFlashcard() {
+            const feedback = document.getElementById('fc-feedback');
+            feedback.classList.remove('hidden', 'text-green-600', 'text-red-600');
+            feedback.classList.add('text-slate-500');
+            feedback.innerHTML = `<i class="fa-solid fa-eye"></i> Answer revealed. +0 XP`;
+            
+            document.getElementById('fc-guess').disabled = true;
+            showFlashcardAnswer(false);
+        }
+
+        function showFlashcardAnswer(wasGuessedCorrectly) {
             const data = state.flashcardCurrent;
             document.getElementById('fc-answer-name').innerText = data.name.common;
             document.getElementById('fc-answer-capital').innerText = data.capital?.[0] || 'No Capital';
             
+            const xpText = document.getElementById('fc-xp-award-text');
+            if (xpText) {
+                xpText.innerText = wasGuessedCorrectly ? "+10 XP" : "+0 XP";
+                xpText.className = wasGuessedCorrectly ? "mt-4 text-green-400 font-bold drop-shadow text-xl" : "mt-4 text-slate-400 font-bold drop-shadow";
+            }
+            
             document.getElementById('fc-overlay').style.opacity = '1';
             
-            document.getElementById('btn-reveal').classList.add('hidden');
+            document.getElementById('fc-action-buttons').classList.add('hidden');
             document.getElementById('btn-next-fc').classList.remove('hidden');
-
-            // Minor XP reward for learning
-            addXP(5);
-            
-            // Show tiny floating animation from the card center
-            const card = document.getElementById('flashcard-container').getBoundingClientRect();
-            showFloatingXP(5, card.left + card.width/2, card.top + card.height/2);
         }
 
         function addXP(amount) {
             state.xp += amount;
+            if (state.xp < 0) state.xp = 0; // Prevent total XP from going below zero
             localStorage.setItem('geo_xp', state.xp);
             localStorage.setItem('geo_streak', state.streak);
             updateDashboard();
@@ -751,7 +902,15 @@
         function showFloatingXP(amount, x, y) {
             const floater = document.createElement('div');
             floater.className = 'floating-xp';
-            floater.innerText = `+${amount} XP`;
+            
+            if (amount >= 0) {
+                floater.innerText = `+${amount} XP`;
+                floater.style.color = '#f97316'; // Orange for positive
+            } else {
+                floater.innerText = `${amount} XP`;
+                floater.style.color = '#ef4444'; // Red for negative penalty
+            }
+
             floater.style.left = `${x}px`;
             floater.style.top = `${y}px`;
             document.body.appendChild(floater);
@@ -818,6 +977,132 @@
             if(window.innerWidth < 768) {
                 document.getElementById('sidebar').classList.add('collapsed');
             }
+        }
+
+        function searchCountry() {
+            const query = document.getElementById('country-search').value.toLowerCase().trim();
+            if (!query) return;
+
+            let foundLayer = null;
+            
+            state.geoLayer.eachLayer(layer => {
+                const props = layer.feature.properties || {};
+                const name = (props.ADMIN || props.name || props.admin || '').toLowerCase();
+                const iso = getCountryCode(props).toLowerCase();
+                
+                if (name.includes(query) || iso === query) {
+                    if (name === query || iso === query) {
+                        foundLayer = layer; // Exact match prioritized
+                    } else if (!foundLayer) {
+                        foundLayer = layer; // Keep first partial match
+                    }
+                }
+            });
+
+            if (foundLayer) {
+                closeToast();
+                
+                // Set to explore mode automatically
+                if (state.mode !== 'explore') setMode('explore');
+                
+                // Clear active continent style filter
+                document.getElementById('continent-select').value = "";
+                filterContinent(); // Resets the continent styles
+                
+                // Zoom smoothly to bounds
+                map.fitBounds(foundLayer.getBounds(), { padding: [50, 50], maxZoom: 5 });
+                
+                // Simulate click to trigger sidebar population
+                handleCountryClick({ 
+                    target: foundLayer, 
+                    originalEvent: { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 } 
+                });
+                
+            } else {
+                showToast(`Country "${document.getElementById('country-search').value}" not found!`);
+            }
+        }
+
+        function filterContinent() {
+            const continent = document.getElementById('continent-select').value;
+            const bounds = L.latLngBounds();
+            let hasLayers = false;
+
+            // Clear any actively selected country logic
+            if (state.activeLayer) {
+                state.geoLayer.resetStyle(state.activeLayer);
+                state.activeLayer = null;
+                state.activeCountryCode = null;
+            }
+
+            if (!continent) {
+                // If "Global View" is selected, just clear styles
+                state.geoLayer.eachLayer(layer => state.geoLayer.resetStyle(layer));
+                return;
+            }
+
+            state.geoLayer.eachLayer(layer => {
+                const props = layer.feature.properties || {};
+                const iso = getCountryCode(props);
+                const region = props.CONTINENT || props.REGION_UN || "Unknown";
+                
+                let isMatch = region.includes(continent) || (CONTINENT_MAP[continent] && CONTINENT_MAP[continent].includes(iso));
+
+                if (isMatch) {
+                    layer.setStyle({
+                        color: '#0f172a', // Bold dark slate
+                        weight: 2,
+                        fillColor: '#f97316', // Orange highlight
+                        fillOpacity: 0.3
+                    });
+                    bounds.extend(layer.getBounds());
+                    hasLayers = true;
+                } else {
+                    state.geoLayer.resetStyle(layer);
+                }
+            });
+
+            if (hasLayers) {
+                map.fitBounds(bounds, { padding: [20, 20] });
+            }
+        }
+
+        function resetMap() {
+            document.getElementById('country-search').value = '';
+            document.getElementById('continent-select').value = '';
+            closeToast();
+            
+            // Revert all styling and active states
+            if(state.geoLayer) {
+                state.geoLayer.eachLayer(layer => state.geoLayer.resetStyle(layer));
+            }
+            state.activeCountryCode = null;
+            state.activeLayer = null;
+            
+            // Return to global view
+            map.setView([20, 0], 3);
+
+            // Hide sidebar content
+            if (state.mode === 'explore') {
+                document.getElementById('explore-empty').classList.remove('hidden');
+                document.getElementById('explore-content').classList.add('hidden');
+                let noDataMsg = document.getElementById('no-data-msg');
+                if(noDataMsg) noDataMsg.classList.add('hidden');
+                
+                if (window.innerWidth < 768) closeMobileSheet();
+            }
+        }
+
+        function showToast(msg) {
+            document.getElementById('toast-text').innerText = msg;
+            document.getElementById('toast-message').classList.remove('hidden');
+            
+            // Auto-hide after 3 seconds
+            setTimeout(closeToast, 3000);
+        }
+        
+        function closeToast() {
+            document.getElementById('toast-message').classList.add('hidden');
         }
 
         // Handle Resize
