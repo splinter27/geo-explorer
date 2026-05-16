@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GeoExplorer Academy</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        geo: {
+                            blue: '#64748b',
+                            blueDark: '#334155',
+                            orange: '#f97316',
+                            orangeDark: '#ea580c',
+                            bg: '#f8fafc'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; overflow: hidden; background-color: #f8fafc; }
+        #map { height: 100vh; width: 100%; z-index: 10; background-color: #e2e8f0; }
+        
+        /* Mobile Bottom Sheet Styles */
+        .bottom-sheet {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
+        }
+        .bottom-sheet.collapsed { transform: translateY(calc(100% - 60px)); }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Animations */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+        .shake-animation { animation: shake 0.4s ease-in-out; }
+
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            100% { transform: translateY(-50px) scale(1.2); opacity: 0; }
+        }
+        .floating-xp {
+            position: fixed;
+            pointer-events: none;
+            color: #f97316;
+            font-weight: bold;
+            font-size: 1.5rem;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            animation: floatUp 1s cubic-bezier(0,0,0.2,1) forwards;
+            z-index: 9999;
+        }
+
+        .tab-btn.active { border-bottom: 2px solid #f97316; color: #f97316; font-weight: 600; }
+        
+        /* Loading Overlay */
+        #loader { transition: opacity 0.5s ease; }
+        .spinner {
+            width: 50px; height: 50px;
+            border: 5px solid #e2e8f0; border-top-color: #f97316;
+            border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="flex flex-col md:flex-row h-screen w-screen">
+
+    <div id="loader" class="fixed inset-0 bg-white z-[9999] flex flex-col items-center justify-center">
+        <div class="spinner mb-4"></div>
+        <h1 class="text-2xl font-bold text-geo-blueDark">GeoExplorer Academy</h1>
+        <p class="text-slate-500 mt-2">Loading Map Data...</p>
+    </div>
+
+    <div id="sidebar" class="bottom-sheet collapsed fixed md:relative bottom-0 left-0 w-full md:w-[420px] bg-white h-[85vh] md:h-screen z-[1000] md:z-20 flex flex-col rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-slate-200 shrink-0">
+        
+        <!-- Mobile Drag Handle -->
+        <div id="drag-handle" class="w-full h-[60px] md:hidden flex items-center justify-center cursor-pointer">
+            <div class="w-12 h-1.5 bg-slate-300 rounded-full"></div>
+        </div>
+
+        <!-- Dashboard Header -->
+        <div class="px-6 py-4 bg-slate-50 border-b border-slate-200 shrink-0 hidden md:block" id="header-dash">
+            <h1 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-earth-americas text-geo-orange"></i> GeoExplorer
+            </h1>
+            <div class="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                    <p class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Rank</p>
+                    <p id="ui-rank" class="text-sm font-bold text-geo-blueDark whitespace-nowrap overflow-hidden text-ellipsis">Novice</p>
+                </div>
+                <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                    <p class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">XP</p>
+                    <p id="ui-xp" class="text-sm font-bold text-geo-orange">0</p>
+                </div>
+                <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                    <p class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Streak</p>
+                    <p id="ui-streak" class="text-sm font-bold text-green-600"><i class="fa-solid fa-fire text-orange-400"></i> 0</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex border-b border-slate-200 shrink-0">
+            <button onclick="setMode('explore')" id="tab-explore" class="tab-btn active flex-1 py-3 text-sm text-slate-500 hover:text-slate-800 transition-colors"><i class="fa-solid fa-magnifying-glass mr-1"></i> Explore</button>
+            <button onclick="setMode('quiz')" id="tab-quiz" class="tab-btn flex-1 py-3 text-sm text-slate-500 hover:text-slate-800 transition-colors"><i class="fa-solid fa-crosshairs mr-1"></i> Quiz</button>
+            <button onclick="setMode('flashcard')" id="tab-flashcard" class="tab-btn flex-1 py-3 text-sm text-slate-500 hover:text-slate-800 transition-colors"><i class="fa-solid fa-clone mr-1"></i> Flashcards</button>
+        </div>
+
+        <!-- Scrollable Content Area -->
+        <div class="flex-1 overflow-y-auto p-6 relative bg-white">
+            
+            <div id="mode-explore" class="block animate-fade-in">
+                <div id="explore-empty" class="text-center text-slate-400 mt-10">
+                    <i class="fa-solid fa-hand-pointer text-4xl mb-3 opacity-50"></i>
+                    <p>Click on any country on the map to explore its details.</p>
+                </div>
+                <div id="explore-content" class="hidden">
+                    <div class="flex items-center gap-4 mb-6">
+                        <img id="exp-flag" src="" alt="Flag" class="w-20 h-auto rounded shadow-sm border border-slate-100">
+                        <div>
+                            <h2 id="exp-name" class="text-2xl font-bold text-slate-800 leading-tight">Country Name</h2>
+                            <p id="exp-region" class="text-sm text-slate-500">Region</p>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-3 mb-6">
+                        <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <span class="text-slate-500 text-sm"><i class="fa-solid fa-building-columns w-5"></i> Capital</span>
+                            <span id="exp-capital" class="font-semibold text-slate-800">---</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <span class="text-slate-500 text-sm"><i class="fa-solid fa-users w-5"></i> Population</span>
+                            <span id="exp-pop" class="font-semibold text-slate-800">---</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <span class="text-slate-500 text-sm"><i class="fa-solid fa-ruler-combined w-5"></i> Area</span>
+                            <span id="exp-area" class="font-semibold text-slate-800">---</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <span class="text-slate-500 text-sm"><i class="fa-solid fa-comments w-5"></i> Language</span>
+                            <span id="exp-lang" class="font-semibold text-slate-800">---</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <span class="text-slate-500 text-sm"><i class="fa-solid fa-coins w-5"></i> Currency</span>
+                            <span id="exp-curr" class="font-semibold text-slate-800">---</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-geo-orange/10 border border-geo-orange/20 rounded-lg shadow-sm">
+                            <span class="text-geo-orangeDark text-sm font-semibold"><i class="fa-regular fa-clock w-5"></i> Local Time</span>
+                            <span id="exp-time" class="font-bold text-geo-orangeDark tracking-wide">00:00:00</span>
+                        </div>
+                    </div>
+
+                    <div class="p-4 bg-indigo-50 border border-indigo-100 rounded-xl relative overflow-hidden">
+                        <div class="absolute -right-4 -top-4 text-indigo-100 opacity-50"><i class="fa-solid fa-lightbulb text-6xl"></i></div>
+                        <h3 class="text-indigo-800 font-bold text-sm mb-1 relative z-10"><i class="fa-solid fa-circle-info"></i> Did You Know?</h3>
+                        <p id="exp-trivia" class="text-indigo-900 text-sm italic relative z-10">Trivia goes here...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="mode-quiz" class="hidden">
+                <div class="bg-geo-blueDark text-white p-5 rounded-xl shadow-lg relative overflow-hidden mb-6">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10"></div>
+                    <span id="quiz-level-badge" class="inline-block px-2 py-1 bg-white/20 rounded text-[10px] font-bold uppercase tracking-wider mb-2">Level 1</span>
+                    <h3 class="text-lg font-medium text-slate-200">Your Mission:</h3>
+                    <p id="quiz-prompt" class="text-2xl font-bold mt-1">Find ...</p>
+                    <div id="quiz-hint-container" class="mt-4 hidden">
+                        <p class="text-xs text-slate-300 mb-1">Hint: Flag</p>
+                        <img id="quiz-hint-flag" src="" class="h-10 rounded border border-white/20">
+                    </div>
+                </div>
+                
+                <div id="quiz-feedback" class="text-center p-4 rounded-lg hidden font-bold text-lg mb-4"></div>
+                
+                <button onclick="startQuiz()" class="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold transition-colors shadow-sm">
+                    <i class="fa-solid fa-rotate-right"></i> Skip & Get New Mission
+                </button>
+            </div>
+
+            <div id="mode-flashcard" class="hidden flex-col items-center">
+                <div class="w-full aspect-[3/2] bg-slate-100 rounded-xl mb-6 shadow-md border border-slate-200 relative perspective-1000" id="flashcard-container">
+                    <img id="fc-flag" src="" class="w-full h-full object-cover rounded-xl" alt="Mystery Flag">
+                    <div id="fc-overlay" class="absolute inset-0 bg-slate-900/80 rounded-xl flex flex-col items-center justify-center text-white p-6 opacity-0 transition-opacity duration-300 pointer-events-none">
+                        <h2 id="fc-answer-name" class="text-3xl font-bold text-center mb-2 drop-shadow-md">---</h2>
+                        <p id="fc-answer-capital" class="text-lg text-slate-300 drop-shadow-md"><i class="fa-solid fa-building-columns"></i> ---</p>
+                        <p class="mt-4 text-geo-orange font-bold drop-shadow">+5 XP</p>
+                    </div>
+                </div>
+                
+                <button id="btn-reveal" onclick="revealFlashcard()" class="w-full py-4 bg-geo-orange hover:bg-geo-orangeDark text-white rounded-xl font-bold text-lg transition-colors shadow-lg mb-4">
+                    Reveal Answer
+                </button>
+                <button id="btn-next-fc" onclick="nextFlashcard()" class="w-full py-4 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-lg transition-colors shadow-lg hidden">
+                    Next Flag <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="map" class="flex-1 z-10 relative cursor-crosshair"></div>
+
+    <script>
+        // Game State
+        const state = {
+            xp: parseInt(localStorage.getItem('geo_xp')) || 0,
+            streak: parseInt(localStorage.getItem('geo_streak')) || 0,
+            mode: 'explore', // explore, quiz, flashcard
+            countriesMap: new Map(), // CCA3 -> Data
+            geoLayer: null,
+            activeCountryCode: null,
+            quizTarget: null,
+            flashcardCurrent: null,
+            clockInterval: null
+        };
+
+        // Ranks
+        const RANKS = [
+            { threshold: 0, name: "Novice Explorer", icon: "fa-map" },
+            { threshold: 100, name: "Cartographer", icon: "fa-compass" },
+            { threshold: 300, name: "Global Scholar", icon: "fa-globe" },
+            { threshold: 500, name: "Master Navigator", icon: "fa-ship" }
+        ];
+
+        // Map Initialization
+        const map = L.map('map', { zoomControl: false }).setView([20, 0], 3);
+        
+        // Move zoom control to top right to avoid mobile bottom sheet
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 10,
+            minZoom: 2
+        }).addTo(map);
+
+        // Add reference labels over polygons
+        map.createPane('labels');
+        map.getPane('labels').style.zIndex = 450;
+        map.getPane('labels').style.pointerEvents = 'none';
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+            pane: 'labels'
+        }).addTo(map);
+
+        // --- CUSTOM LOCAL API DATABASE ---
+        // You can easily expand this object by adding more countries!
+        const LOCAL_COUNTRY_DB = {
+            "USA": { name: { common: "United States" }, cca3: "USA", flags: { png: "https://flagcdn.com/w320/us.png" }, capital: ["Washington, D.C."], population: 331449281, area: 9372610, languages: { eng: "English" }, currencies: { USD: { name: "United States dollar", symbol: "$" } }, timezones: ["UTC-05:00"], region: "Americas", subregion: "North America", car: { side: "right" } },
+            "CAN": { name: { common: "Canada" }, cca3: "CAN", flags: { png: "https://flagcdn.com/w320/ca.png" }, capital: ["Ottawa"], population: 38005238, area: 9984670, languages: { eng: "English", fra: "French" }, currencies: { CAD: { name: "Canadian dollar", symbol: "$" } }, timezones: ["UTC-05:00"], region: "Americas", subregion: "North America", car: { side: "right" } },
+            "MEX": { name: { common: "Mexico" }, cca3: "MEX", flags: { png: "https://flagcdn.com/w320/mx.png" }, capital: ["Mexico City"], population: 128932753, area: 1964375, languages: { spa: "Spanish" }, currencies: { MXN: { name: "Mexican peso", symbol: "$" } }, timezones: ["UTC-06:00"], region: "Americas", subregion: "North America", car: { side: "right" } },
+            "BRA": { name: { common: "Brazil" }, cca3: "BRA", flags: { png: "https://flagcdn.com/w320/br.png" }, capital: ["Brasília"], population: 212559409, area: 8515767, languages: { por: "Portuguese" }, currencies: { BRL: { name: "Brazilian real", symbol: "R$" } }, timezones: ["UTC-03:00"], region: "Americas", subregion: "South America", car: { side: "right" } },
+            "GBR": { name: { common: "United Kingdom" }, cca3: "GBR", flags: { png: "https://flagcdn.com/w320/gb.png" }, capital: ["London"], population: 67215293, area: 242900, languages: { eng: "English" }, currencies: { GBP: { name: "British pound", symbol: "£" } }, timezones: ["UTC+00:00"], region: "Europe", subregion: "Northern Europe", car: { side: "left" } },
+            "FRA": { name: { common: "France" }, cca3: "FRA", flags: { png: "https://flagcdn.com/w320/fr.png" }, capital: ["Paris"], population: 67391582, area: 551695, languages: { fra: "French" }, currencies: { EUR: { name: "Euro", symbol: "€" } }, timezones: ["UTC+01:00"], region: "Europe", subregion: "Western Europe", car: { side: "right" } },
+            "DEU": { name: { common: "Germany" }, cca3: "DEU", flags: { png: "https://flagcdn.com/w320/de.png" }, capital: ["Berlin"], population: 83240525, area: 357114, languages: { deu: "German" }, currencies: { EUR: { name: "Euro", symbol: "€" } }, timezones: ["UTC+01:00"], region: "Europe", subregion: "Western Europe", car: { side: "right" } },
+            "ITA": { name: { common: "Italy" }, cca3: "ITA", flags: { png: "https://flagcdn.com/w320/it.png" }, capital: ["Rome"], population: 59554023, area: 301336, languages: { ita: "Italian" }, currencies: { EUR: { name: "Euro", symbol: "€" } }, timezones: ["UTC+01:00"], region: "Europe", subregion: "Southern Europe", car: { side: "right" } },
+            "ESP": { name: { common: "Spain" }, cca3: "ESP", flags: { png: "https://flagcdn.com/w320/es.png" }, capital: ["Madrid"], population: 47351567, area: 505992, languages: { spa: "Spanish" }, currencies: { EUR: { name: "Euro", symbol: "€" } }, timezones: ["UTC+01:00"], region: "Europe", subregion: "Southern Europe", car: { side: "right" } },
+            "IND": { name: { common: "India" }, cca3: "IND", flags: { png: "https://flagcdn.com/w320/in.png" }, capital: ["New Delhi"], population: 1380004385, area: 3287590, languages: { hin: "Hindi", eng: "English" }, currencies: { INR: { name: "Indian rupee", symbol: "₹" } }, timezones: ["UTC+05:30"], region: "Asia", subregion: "Southern Asia", car: { side: "left" } },
+            "CHN": { name: { common: "China" }, cca3: "CHN", flags: { png: "https://flagcdn.com/w320/cn.png" }, capital: ["Beijing"], population: 1402112000, area: 9706961, languages: { zho: "Chinese" }, currencies: { CNY: { name: "Chinese yuan", symbol: "¥" } }, timezones: ["UTC+08:00"], region: "Asia", subregion: "Eastern Asia", car: { side: "right" } },
+            "JPN": { name: { common: "Japan" }, cca3: "JPN", flags: { png: "https://flagcdn.com/w320/jp.png" }, capital: ["Tokyo"], population: 125836021, area: 377930, languages: { jpn: "Japanese" }, currencies: { JPY: { name: "Japanese yen", symbol: "¥" } }, timezones: ["UTC+09:00"], region: "Asia", subregion: "Eastern Asia", car: { side: "left" } },
+            "AUS": { name: { common: "Australia" }, cca3: "AUS", flags: { png: "https://flagcdn.com/w320/au.png" }, capital: ["Canberra"], population: 25687041, area: 7692024, languages: { eng: "English" }, currencies: { AUD: { name: "Australian dollar", symbol: "$" } }, timezones: ["UTC+10:00"], region: "Oceania", subregion: "Australia and New Zealand", car: { side: "left" } },
+            "ZAF": { name: { common: "South Africa" }, cca3: "ZAF", flags: { png: "https://flagcdn.com/w320/za.png" }, capital: ["Pretoria"], population: 59308690, area: 1221037, languages: { eng: "English", afr: "Afrikaans" }, currencies: { ZAR: { name: "South African rand", symbol: "R" } }, timezones: ["UTC+02:00"], region: "Africa", subregion: "Southern Africa", car: { side: "left" } },
+            "EGY": { name: { common: "Egypt" }, cca3: "EGY", flags: { png: "https://flagcdn.com/w320/eg.png" }, capital: ["Cairo"], population: 102334403, area: 1002450, languages: { ara: "Arabic" }, currencies: { EGP: { name: "Egyptian pound", symbol: "£" } }, timezones: ["UTC+02:00"], region: "Africa", subregion: "Northern Africa", car: { side: "right" } },
+            "RUS": { name: { common: "Russia" }, cca3: "RUS", flags: { png: "https://flagcdn.com/w320/ru.png" }, capital: ["Moscow"], population: 144104080, area: 17098242, languages: { rus: "Russian" }, currencies: { RUB: { name: "Russian ruble", symbol: "₽" } }, timezones: ["UTC+03:00"], region: "Europe", subregion: "Eastern Europe", car: { side: "right" } },
+            "KOR": { name: { common: "South Korea" }, cca3: "KOR", flags: { png: "https://flagcdn.com/w320/kr.png" }, capital: ["Seoul"], population: 51780579, area: 100210, languages: { kor: "Korean" }, currencies: { KRW: { name: "South Korean won", symbol: "₩" } }, timezones: ["UTC+09:00"], region: "Asia", subregion: "Eastern Asia", car: { side: "right" } },
+            "ARG": { name: { common: "Argentina" }, cca3: "ARG", flags: { png: "https://flagcdn.com/w320/ar.png" }, capital: ["Buenos Aires"], population: 45376763, area: 2780400, languages: { spa: "Spanish" }, currencies: { ARS: { name: "Argentine peso", symbol: "$" } }, timezones: ["UTC-03:00"], region: "Americas", subregion: "South America", car: { side: "right" } },
+            "NGA": { name: { common: "Nigeria" }, cca3: "NGA", flags: { png: "https://flagcdn.com/w320/ng.png" }, capital: ["Abuja"], population: 206139587, area: 923768, languages: { eng: "English" }, currencies: { NGN: { name: "Nigerian naira", symbol: "₦" } }, timezones: ["UTC+01:00"], region: "Africa", subregion: "Western Africa", car: { side: "right" } },
+            "SAU": { name: { common: "Saudi Arabia" }, cca3: "SAU", flags: { png: "https://flagcdn.com/w320/sa.png" }, capital: ["Riyadh"], population: 34813867, area: 2149690, languages: { ara: "Arabic" }, currencies: { SAR: { name: "Saudi riyal", symbol: "ر.س" } }, timezones: ["UTC+03:00"], region: "Asia", subregion: "Western Asia", car: { side: "right" } }
+        };
+
+        class CustomGeoAPI {
+            static async getAllCountries() {
+                // Simulate a fast API call returning our local database array
+                return new Promise(resolve => setTimeout(() => resolve(Object.values(LOCAL_COUNTRY_DB)), 50));
+            }
+        }
+
+        async function loadData() {
+            try {
+                // 1. Fetch from our Custom Local API instead of RestCountries
+                const restData = await CustomGeoAPI.getAllCountries();
+                
+                // 2. Fetch GeoJSON boundaries
+                const geoRes = await fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson');
+                const geoData = await geoRes.json();
+
+                // Build lookup map by ISO/CCA3 code
+                restData.forEach(country => {
+                    state.countriesMap.set(country.cca3, country);
+                });
+
+                // Initialize GeoJSON Layer
+                state.geoLayer = L.geoJSON(geoData, {
+                    style: getDefaultStyle,
+                    onEachFeature: onEachFeature
+                }).addTo(map);
+
+                // Update UI Header
+                updateDashboard();
+                
+                // Remove Loading Screen
+                document.getElementById('loader').style.opacity = '0';
+                setTimeout(() => document.getElementById('loader').remove(), 500);
+
+                // Init Mobile UI logic
+                initMobileBottomSheet();
+
+            } catch (error) {
+                console.error("Error loading geographical data:", error);
+                document.getElementById('loader').innerHTML = `<h1 class="text-red-500 font-bold text-xl">Error loading map data. Please refresh.</h1>`;
+            }
+        }
+
+        function getDefaultStyle(feature) {
+            return {
+                fillColor: '#e2e8f0', // slate-200
+                weight: 1.5,
+                opacity: 1,
+                color: '#94a3b8', // slate-400
+                fillOpacity: 0.3
+            };
+        }
+
+        function getHighlightStyle() {
+            return {
+                fillColor: '#f97316', // geo-orange
+                weight: 2,
+                opacity: 1,
+                color: '#ea580c', // geo-orangeDark
+                fillOpacity: 0.6
+            };
+        }
+
+        function onEachFeature(feature, layer) {
+            layer.on({
+                mouseover: highlightFeatureHover,
+                mouseout: resetHighlightHover,
+                click: handleCountryClick
+            });
+        }
+
+        function highlightFeatureHover(e) {
+            const layer = e.target;
+            const props = layer.feature.properties || {};
+            const code = props.ISO_A3 || props["ISO3166-1-Alpha-3"] || props.iso_a3;
+            
+            if (state.activeCountryCode !== code) {
+                layer.setStyle({ fillOpacity: 0.6, fillColor: '#cbd5e1' });
+            }
+        }
+
+        function resetHighlightHover(e) {
+            const layer = e.target;
+            const props = layer.feature.properties || {};
+            const code = props.ISO_A3 || props["ISO3166-1-Alpha-3"] || props.iso_a3;
+            
+            if (state.activeCountryCode !== code) {
+                state.geoLayer.resetStyle(layer);
+            }
+        }
+
+        // Main Map Click Handler routing logic based on Game Mode
+        async function handleCountryClick(e) {
+            const layer = e.target;
+            const props = layer.feature.properties || {};
+            const cca3 = props.ISO_A3 || props["ISO3166-1-Alpha-3"] || props.iso_a3 || "UNK";
+            const countryName = props.ADMIN || props.name || props.admin || 'Unknown Region';
+            
+            let countryData = state.countriesMap.get(cca3);
+            
+            // Visual map highlight
+            if(state.activeLayer) {
+                state.geoLayer.resetStyle(state.activeLayer);
+            }
+            state.activeLayer = layer;
+            state.activeCountryCode = cca3;
+            layer.setStyle(getHighlightStyle());
+            layer.bringToFront();
+
+            if (!countryData) {
+                if (state.mode === 'explore') {
+                    document.getElementById('explore-empty').classList.add('hidden');
+                    document.getElementById('explore-content').classList.add('hidden');
+                    
+                    let noDataMsg = document.getElementById('no-data-msg');
+                    if(!noDataMsg) {
+                        noDataMsg = document.createElement('div');
+                        noDataMsg.id = 'no-data-msg';
+                        noDataMsg.className = 'text-center mt-10 p-6 bg-slate-50 rounded-xl border border-slate-200 shadow-sm';
+                        document.getElementById('mode-explore').appendChild(noDataMsg);
+                    }
+
+                    // Show loading state
+                    noDataMsg.innerHTML = `
+                        <div class="spinner mx-auto mb-4 border-slate-200" style="width: 40px; height: 40px; border-width: 4px; border-top-color: #f97316;"></div>
+                        <h3 class="text-lg font-bold text-slate-800 mb-1">${countryName}</h3>
+                        <p class="text-sm text-slate-500 mb-4">Fetching live data from RestCountries...</p>
+                    `;
+                    noDataMsg.classList.remove('hidden');
+                    openMobileSheet();
+
+                    try {
+                        if (cca3 === "UNK" || cca3 === "-99") throw new Error("Invalid ISO Code");
+                        
+                        // Fetch the specific country from the API
+                        const response = await fetch(`https://restcountries.com/v3.1/alpha/${cca3}`);
+                        if (!response.ok) throw new Error("Country not found in API");
+                        
+                        const data = await response.json();
+                        countryData = data[0];
+                        
+                        // Save locally so we don't need to fetch it again
+                        LOCAL_COUNTRY_DB[cca3] = countryData;
+                        state.countriesMap.set(cca3, countryData);
+
+                        // Hide the fallback message and render the new data
+                        noDataMsg.classList.add('hidden');
+                        showExploreData(countryData);
+
+                    } catch (error) {
+                        // Fallback to the code snippet generator if fetch fails
+                        const safeCca3 = (cca3 && cca3 !== '-99' && cca3 !== 'UNK') ? cca3.substring(0,2).toLowerCase() : 'xx';
+                        noDataMsg.innerHTML = `
+                            <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-200 text-slate-500 mb-3">
+                                <i class="fa-solid fa-code text-xl"></i>
+                            </div>
+                            <h3 class="text-lg font-bold text-slate-800 mb-1">${countryName}</h3>
+                            <p class="text-sm text-slate-500 mb-4">Failed to fetch data automatically. You can add it to your custom database manually:</p>
+                            <div class="text-xs text-left bg-slate-800 text-green-400 p-3 rounded rounded-md font-mono overflow-x-auto whitespace-pre-wrap">
+// Add to LOCAL_COUNTRY_DB:
+"${cca3}": { 
+  name: { common: "${countryName}" }, 
+  cca3: "${cca3}",
+  flags: { png: "https://flagcdn.com/w320/${safeCca3}.png" },
+  capital: ["Unknown"],
+  // Add other properties here...
+}</div>
+                        `;
+                    }
+                } else if (state.mode === 'quiz') {
+                    // If clicked during quiz, it is incorrect since target is always a loaded country
+                    checkQuizAnswer(cca3, e.originalEvent.clientX, e.originalEvent.clientY);
+                }
+                return;
+            }
+
+            // Hide the no data message if it exists and we have data
+            let noDataMsg = document.getElementById('no-data-msg');
+            if(noDataMsg) noDataMsg.classList.add('hidden');
+
+            // Route based on active mode
+            if (state.mode === 'explore') {
+                showExploreData(countryData);
+                openMobileSheet();
+            } else if (state.mode === 'quiz') {
+                checkQuizAnswer(cca3, e.originalEvent.clientX, e.originalEvent.clientY);
+            } else if (state.mode === 'flashcard') {
+                // Ignore map clicks during flashcard mode to keep focus on sidebar
+                openMobileSheet();
+            }
+        }
+
+        function setMode(mode) {
+            state.mode = mode;
+            
+            // Update Tab UI
+            ['explore', 'quiz', 'flashcard'].forEach(m => {
+                document.getElementById(`tab-${m}`).classList.remove('active');
+                document.getElementById(`mode-${m}`).classList.add('hidden');
+            });
+            document.getElementById(`tab-${mode}`).classList.add('active');
+            document.getElementById(`mode-${mode}`).classList.remove('hidden');
+
+            // Reset Map highlights
+            if(state.activeLayer && state.geoLayer) {
+                state.geoLayer.resetStyle(state.activeLayer);
+                state.activeCountryCode = null;
+                state.activeLayer = null;
+            }
+
+            // Clear ticking clock
+            if(state.clockInterval) clearInterval(state.clockInterval);
+
+            // Hide custom DB missing message on tab switch
+            let noDataMsg = document.getElementById('no-data-msg');
+            if(noDataMsg) noDataMsg.classList.add('hidden');
+
+            // Initialize specific mode
+            if (mode === 'quiz') startQuiz();
+            if (mode === 'flashcard') nextFlashcard();
+            if (mode === 'explore') {
+                document.getElementById('explore-empty').classList.remove('hidden');
+                document.getElementById('explore-content').classList.add('hidden');
+            }
+            
+            openMobileSheet();
+        }
+
+        function showExploreData(data) {
+            document.getElementById('explore-empty').classList.add('hidden');
+            document.getElementById('explore-content').classList.remove('hidden');
+
+            document.getElementById('exp-flag').src = data.flags?.png || '';
+            document.getElementById('exp-name').innerText = data.name.common;
+            document.getElementById('exp-region').innerText = `${data.subregion || 'N/A'}, ${data.region}`;
+            
+            document.getElementById('exp-capital').innerText = data.capital?.[0] || 'N/A';
+            document.getElementById('exp-pop').innerText = data.population ? data.population.toLocaleString() : 'N/A';
+            document.getElementById('exp-area').innerText = data.area ? `${data.area.toLocaleString()} km²` : 'N/A';
+            
+            const langs = data.languages ? Object.values(data.languages).join(', ') : 'N/A';
+            document.getElementById('exp-lang').innerText = langs;
+            
+            const currs = data.currencies ? Object.values(data.currencies).map(c => `${c.name} (${c.symbol})`).join(', ') : 'N/A';
+            document.getElementById('exp-curr').innerText = currs;
+
+            // Generate Trivia
+            document.getElementById('exp-trivia').innerText = generateTrivia(data);
+
+            // Ticking Clock
+            startClock(data.timezones);
+        }
+
+        function startClock(timezones) {
+            if(state.clockInterval) clearInterval(state.clockInterval);
+            
+            const timeEl = document.getElementById('exp-time');
+            if(!timezones || !timezones[0]) {
+                timeEl.innerText = "Unknown";
+                return;
+            }
+
+            const updateTime = () => {
+                let tz = timezones[0];
+                if(tz === "UTC") {
+                    timeEl.innerText = new Date().toLocaleTimeString('en-US', { timeZone: 'UTC' });
+                    return;
+                }
+                
+                // Parse UTC+XX:XX
+                let match = tz.match(/UTC([+-])(\d{2}):(\d{2})/);
+                if(match) {
+                    let sign = match[1] === '+' ? 1 : -1;
+                    let offsetMins = sign * (parseInt(match[2]) * 60 + parseInt(match[3]));
+                    
+                    let d = new Date();
+                    let localTime = d.getTime() + (d.getTimezoneOffset() * 60000) + (offsetMins * 60000);
+                    timeEl.innerText = new Date(localTime).toLocaleTimeString('en-US');
+                } else {
+                    timeEl.innerText = "Unknown";
+                }
+            };
+            
+            updateTime();
+            state.clockInterval = setInterval(updateTime, 1000);
+        }
+
+        function generateTrivia(data) {
+            const facts = [
+                `They drive on the ${data.car?.side || 'right'} side of the road here.`,
+                `${data.name.common} has a population of roughly ${(data.population / 1000000).toFixed(1)} million people.`,
+                `Located in the ${data.subregion || data.region}, it covers an area of ${data.area?.toLocaleString()} square kilometers.`,
+                data.capital ? `${data.capital[0]} serves as the heart and capital of the nation.` : 'This territory has a unique administrative setup without a primary capital.'
+            ];
+            return facts[Math.floor(Math.random() * facts.length)];
+        }
+
+        function startQuiz() {
+            // Get an array of valid countries (that exist on map)
+            let validCodes = Array.from(state.countriesMap.keys()).filter(code => 
+                state.geoLayer && state.geoLayer.getLayers().some(l => {
+                    const props = l.feature && l.feature.properties;
+                    if (!props) return false;
+                    const layerCode = props.ISO_A3 || props["ISO3166-1-Alpha-3"] || props.iso_a3;
+                    return layerCode === code;
+                })
+            );
+            
+            // Fallback if mapping fails or geoLayer is empty
+            if (!validCodes || validCodes.length === 0) {
+                validCodes = Array.from(state.countriesMap.keys());
+            }
+            
+            const randomCode = validCodes[Math.floor(Math.random() * validCodes.length)];
+            let targetData = state.countriesMap.get(randomCode);
+
+            // Absolute fallback to ensure it's never undefined
+            if (!targetData) {
+                targetData = Array.from(state.countriesMap.values())[0];
+            }
+
+            state.quizTarget = targetData;
+
+            // Determine Difficulty (1, 2, or 3)
+            // Level 3 requires a capital
+            let level = Math.floor(Math.random() * 3) + 1;
+            if(level === 3 && !targetData.capital) level = 2; 
+
+            const badge = document.getElementById('quiz-level-badge');
+            const prompt = document.getElementById('quiz-prompt');
+            const hintContainer = document.getElementById('quiz-hint-container');
+            const hintFlag = document.getElementById('quiz-hint-flag');
+            const feedback = document.getElementById('quiz-feedback');
+
+            feedback.classList.add('hidden');
+            hintContainer.classList.add('hidden');
+
+            if (level === 1) {
+                badge.innerText = "Level 1: Flag Match";
+                badge.className = "inline-block px-2 py-1 bg-green-500/20 text-green-300 rounded text-[10px] font-bold uppercase tracking-wider mb-2";
+                prompt.innerText = `Find ${targetData.name.common}`;
+                hintFlag.src = targetData.flags.png;
+                hintContainer.classList.remove('hidden');
+            } else if (level === 2) {
+                badge.innerText = "Level 2: Name Match";
+                badge.className = "inline-block px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-[10px] font-bold uppercase tracking-wider mb-2";
+                prompt.innerText = `Find ${targetData.name.common}`;
+            } else {
+                badge.innerText = "Level 3: Capital Match";
+                badge.className = "inline-block px-2 py-1 bg-red-500/20 text-red-300 rounded text-[10px] font-bold uppercase tracking-wider mb-2";
+                prompt.innerText = `Find the country where ${targetData.capital[0]} is the capital.`;
+            }
+
+            // Close sheet on mobile so they can see map
+            if (window.innerWidth < 768) {
+                closeMobileSheet();
+            }
+        }
+
+        function checkQuizAnswer(clickedCode, x, y) {
+            const feedback = document.getElementById('quiz-feedback');
+            feedback.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800');
+
+            if (clickedCode === state.quizTarget.cca3) {
+                // Correct!
+                confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#f97316', '#64748b', '#ffffff'] });
+                
+                state.streak++;
+                const mult = 1 + Math.floor(state.streak / 3); // Every 3 streak increases mult
+                const earnedXP = 15 * mult;
+                
+                addXP(earnedXP);
+                showFloatingXP(earnedXP, x, y);
+                
+                feedback.classList.add('bg-green-100', 'text-green-800');
+                feedback.innerHTML = `<i class="fa-solid fa-circle-check"></i> Correct! +${earnedXP} XP <br><span class="text-sm font-normal">Loading next mission...</span>`;
+                
+                setTimeout(startQuiz, 2000);
+            } else {
+                // Wrong!
+                const clickedName = state.countriesMap.get(clickedCode)?.name.common || "an unknown area";
+                state.streak = 0; // Reset streak
+                updateDashboard();
+                
+                // Shake Sidebar
+                const sidebar = document.getElementById('sidebar');
+                sidebar.classList.remove('shake-animation');
+                void sidebar.offsetWidth; // trigger reflow
+                sidebar.classList.add('shake-animation');
+
+                feedback.classList.add('bg-red-100', 'text-red-800');
+                feedback.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Incorrect!<br><span class="text-sm font-normal">You clicked ${clickedName}. Keep trying!</span>`;
+                openMobileSheet();
+            }
+        }
+
+        function nextFlashcard() {
+            const codes = Array.from(state.countriesMap.keys());
+            const randomCode = codes[Math.floor(Math.random() * codes.length)];
+            let data = state.countriesMap.get(randomCode);
+            
+            // Absolute fallback to ensure data is never undefined
+            if (!data) {
+                data = Array.from(state.countriesMap.values())[0];
+            }
+            
+            state.flashcardCurrent = data;
+
+            document.getElementById('fc-flag').src = data.flags.png;
+            document.getElementById('fc-overlay').style.opacity = '0';
+            
+            document.getElementById('btn-reveal').classList.remove('hidden');
+            document.getElementById('btn-next-fc').classList.add('hidden');
+        }
+
+        function revealFlashcard() {
+            const data = state.flashcardCurrent;
+            document.getElementById('fc-answer-name').innerText = data.name.common;
+            document.getElementById('fc-answer-capital').innerText = data.capital?.[0] || 'No Capital';
+            
+            document.getElementById('fc-overlay').style.opacity = '1';
+            
+            document.getElementById('btn-reveal').classList.add('hidden');
+            document.getElementById('btn-next-fc').classList.remove('hidden');
+
+            // Minor XP reward for learning
+            addXP(5);
+            
+            // Show tiny floating animation from the card center
+            const card = document.getElementById('flashcard-container').getBoundingClientRect();
+            showFloatingXP(5, card.left + card.width/2, card.top + card.height/2);
+        }
+
+        function addXP(amount) {
+            state.xp += amount;
+            localStorage.setItem('geo_xp', state.xp);
+            localStorage.setItem('geo_streak', state.streak);
+            updateDashboard();
+        }
+
+        function updateDashboard() {
+            // Calculate Rank
+            let currentRank = RANKS[0];
+            for (let i = RANKS.length - 1; i >= 0; i--) {
+                if (state.xp >= RANKS[i].threshold) {
+                    currentRank = RANKS[i];
+                    break;
+                }
+            }
+
+            // Sync Header UI (Desktop)
+            const headerDash = document.getElementById('header-dash');
+            if(headerDash) {
+                document.getElementById('ui-xp').innerText = state.xp;
+                document.getElementById('ui-streak').innerHTML = `<i class="fa-solid fa-fire text-orange-400"></i> ${state.streak}`;
+                document.getElementById('ui-rank').innerHTML = `<i class="fa-solid ${currentRank.icon} text-geo-blueDark mr-1"></i> ${currentRank.name}`;
+            }
+        }
+
+        function showFloatingXP(amount, x, y) {
+            const floater = document.createElement('div');
+            floater.className = 'floating-xp';
+            floater.innerText = `+${amount} XP`;
+            floater.style.left = `${x}px`;
+            floater.style.top = `${y}px`;
+            document.body.appendChild(floater);
+            
+            setTimeout(() => {
+                floater.remove();
+            }, 1000);
+        }
+
+        function initMobileBottomSheet() {
+            const sidebar = document.getElementById('sidebar');
+            const handle = document.getElementById('drag-handle');
+            
+            // Only add mobile logic if we are on a smaller screen
+            // Tap to toggle
+            handle.addEventListener('click', () => {
+                if(window.innerWidth >= 768) return;
+                if(sidebar.classList.contains('collapsed')) {
+                    openMobileSheet();
+                } else {
+                    closeMobileSheet();
+                }
+            });
+
+            // Basic swipe down logic
+            let startY = 0;
+            handle.addEventListener('touchstart', (e) => {
+                startY = e.touches[0].clientY;
+            }, {passive: true});
+
+            handle.addEventListener('touchend', (e) => {
+                if(window.innerWidth >= 768) return;
+                const endY = e.changedTouches[0].clientY;
+                if(endY - startY > 50) {
+                    closeMobileSheet(); // Swiped down
+                } else if (startY - endY > 50) {
+                    openMobileSheet(); // Swiped up
+                }
+            }, {passive: true});
+            
+            // Start expanded on desktop, collapsed on mobile
+            if(window.innerWidth < 768) {
+                // Ensure dashboard is visible on mobile inside the sheet header since the main one is hidden
+                const mobileDash = document.getElementById('header-dash').cloneNode(true);
+                mobileDash.id = "mobile-dash";
+                mobileDash.classList.remove('hidden', 'md:block');
+                sidebar.insertBefore(mobileDash, sidebar.children[1]);
+                updateDashboard(); // re-sync
+            }
+        }
+
+        function openMobileSheet() {
+            if(window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.remove('collapsed');
+            }
+        }
+
+        function closeMobileSheet() {
+            if(window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.add('collapsed');
+            }
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if(window.innerWidth >= 768) {
+                sidebar.classList.remove('collapsed');
+            }
+        });
+
+        // Bootstrap App
+        window.onload = loadData;
+
+    </script>
+</body>
+</html>
