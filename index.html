@@ -85,6 +85,10 @@
             border-radius: 50%; animation: spin 1s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Custom Landmark Popup CSS */
+        .custom-landmark-popup .leaflet-popup-content-wrapper { border-radius: 0.75rem; overflow: hidden; padding: 0; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .custom-landmark-popup .leaflet-popup-content { margin: 8px; }
     </style>
 </head>
 <body class="flex flex-col md:flex-row h-screen w-screen">
@@ -165,7 +169,10 @@
                         </div>
                         <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
                             <span class="text-slate-500 text-sm"><i class="fa-solid fa-coins w-5"></i> Currency</span>
-                            <span id="exp-curr" class="font-semibold text-slate-800">---</span>
+                            <div class="text-right">
+                                <span id="exp-curr" class="font-semibold text-slate-800 block">---</span>
+                                <span id="exp-curr-rate" class="text-[10px] text-green-600 font-bold block mt-0.5"></span>
+                            </div>
                         </div>
                         <div class="flex justify-between items-center p-3 bg-geo-orange/10 border border-geo-orange/20 rounded-lg shadow-sm">
                             <span class="text-geo-orangeDark text-sm font-semibold"><i class="fa-regular fa-clock w-5"></i> Local Time</span>
@@ -201,9 +208,24 @@
             </div>
 
             <div id="mode-flashcard" class="hidden flex-col items-center">
-                <div class="w-full aspect-[3/2] bg-slate-100 rounded-xl mb-6 shadow-md border border-slate-200 relative perspective-1000" id="flashcard-container">
-                    <img id="fc-flag" src="" class="w-full h-full object-cover rounded-xl" alt="Mystery Flag">
-                    <div id="fc-overlay" class="absolute inset-0 bg-slate-900/80 rounded-xl flex flex-col items-center justify-center text-white p-6 opacity-0 transition-opacity duration-300 pointer-events-none">
+                
+                <!-- Toggle Mode: Flag vs Shape -->
+                <div class="flex justify-center gap-2 mb-4 bg-slate-100 p-1 rounded-lg w-fit mx-auto border border-slate-200 shadow-inner">
+                    <button id="btn-mode-flag" onclick="setFlashcardType('flag')" class="px-4 py-1.5 bg-white shadow-sm rounded-md text-sm font-bold text-slate-800 transition-all">🚩 Flag Mode</button>
+                    <button id="btn-mode-shape" onclick="setFlashcardType('shape')" class="px-4 py-1.5 text-slate-500 rounded-md text-sm font-bold hover:bg-slate-200 transition-all">🧩 Shape Mode</button>
+                </div>
+
+                <div class="w-full aspect-[3/2] bg-slate-100 rounded-xl mb-6 shadow-md border border-slate-200 relative perspective-1000 overflow-hidden" id="flashcard-container">
+                    <img id="fc-flag" src="" class="w-full h-full object-cover rounded-xl transition-all" alt="Mystery Flag">
+                    
+                    <!-- Silhouette Shape Container -->
+                    <div id="fc-shape-container" class="w-full h-full rounded-xl hidden bg-slate-100 relative">
+                        <div id="fc-shape-map" class="w-full h-full rounded-xl absolute inset-0 z-0"></div>
+                        <div class="absolute inset-0 shadow-[inset_0_0_20px_rgba(0,0,0,0.1)] pointer-events-none z-10"></div>
+                    </div>
+
+                    <div id="fc-overlay" class="absolute inset-0 bg-slate-900/90 rounded-xl flex flex-col items-center justify-center text-white p-6 opacity-0 transition-opacity duration-300 pointer-events-none z-20">
+                        <img id="fc-overlay-flag" src="" class="h-12 w-auto rounded border border-white/20 mb-3 shadow-md hidden">
                         <h2 id="fc-answer-name" class="text-3xl font-bold text-center mb-2 drop-shadow-md">---</h2>
                         <p id="fc-answer-capital" class="text-lg text-slate-300 drop-shadow-md"><i class="fa-solid fa-building-columns"></i> ---</p>
                         <p id="fc-xp-award-text" class="mt-4 text-geo-orange font-bold drop-shadow">+10 XP</p>
@@ -286,15 +308,20 @@
             xp: parseInt(localStorage.getItem('geo_xp')) || 0,
             streak: parseInt(localStorage.getItem('geo_streak')) || 0,
             mode: 'explore', // explore, quiz, flashcard
+            fcType: 'flag', // flag, shape
             countriesMap: new Map(), // CCA3 -> Data
             geoLayer: null,
+            landmarkLayer: null,
             activeCountryCode: null,
             activeLayer: null,
             quizTarget: null,
             flashcardCurrent: null,
             clockInterval: null,
             quizTimeout: null,
-            capitalMarker: null // Track the active capital pin
+            capitalMarker: null, // Track the active capital pin
+            fcMap: null,
+            fcShapeLayer: null,
+            exchangeRates: null
         };
 
         // Ranks
@@ -303,6 +330,20 @@
             { threshold: 100, name: "Cartographer", icon: "fa-compass" },
             { threshold: 300, name: "Global Scholar", icon: "fa-globe" },
             { threshold: 500, name: "Master Navigator", icon: "fa-ship" }
+        ];
+
+        // Landmarks Database
+        const LANDMARKS = [
+            { name: "Eiffel Tower", lat: 48.8584, lng: 2.2945, fact: "The Eiffel Tower was originally intended to be a temporary installation for the 1889 World's Fair.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Tour_Eiffel_Wikimedia_Commons_%28cropped%29.jpg/320px-Tour_Eiffel_Wikimedia_Commons_%28cropped%29.jpg" },
+            { name: "Pyramids of Giza", lat: 29.9792, lng: 31.1342, fact: "The Great Pyramid consists of an estimated 2.3 million blocks and is the oldest of the Seven Wonders of the Ancient World.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Kheops-Pyramid.jpg/320px-Kheops-Pyramid.jpg" },
+            { name: "Machu Picchu", lat: -13.1631, lng: -72.5450, fact: "Built in the 15th century and later abandoned, it's known as the 'Lost City of the Incas'.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Machu_Picchu%2C_Peru.jpg/320px-Machu_Picchu%2C_Peru.jpg" },
+            { name: "Great Wall of China", lat: 40.4319, lng: 116.5704, fact: "The wall is not a single continuous line, but a series of walls and fortifications built over centuries.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/The_Great_Wall_of_China_at_Jinshanling-edit.jpg/320px-The_Great_Wall_of_China_at_Jinshanling-edit.jpg" },
+            { name: "Taj Mahal", lat: 27.1751, lng: 78.0421, fact: "It is a white marble mausoleum built by Mughal emperor Shah Jahan in memory of his favorite wife.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Taj_Mahal_in_March_2004.jpg/320px-Taj_Mahal_in_March_2004.jpg" },
+            { name: "Statue of Liberty", lat: 40.6892, lng: -74.0445, fact: "A gift of friendship from the people of France to the United States.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Statue_of_Liberty_7.jpg/320px-Statue_of_Liberty_7.jpg" },
+            { name: "Colosseum", lat: 41.8902, lng: 12.4922, fact: "It is the largest ancient amphitheatre ever built and could hold an estimated 50,000 to 80,000 spectators.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Colosseum_in_Rome-April_2007-1-_copie_2B.jpg/320px-Colosseum_in_Rome-April_2007-1-_copie_2B.jpg" },
+            { name: "Christ the Redeemer", lat: -22.9519, lng: -43.2105, fact: "An iconic Art Deco statue of Jesus Christ in Rio de Janeiro, Brazil.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Christ_the_Redeemer_-_Cristo_Redentor.jpg/320px-Christ_the_Redeemer_-_Cristo_Redentor.jpg" },
+            { name: "Sydney Opera House", lat: -33.8568, lng: 151.2153, fact: "Designed by Danish architect Jørn Utzon, its famous 'shells' required immense engineering innovation.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Sydney_Australia._%2821339175489%29.jpg/320px-Sydney_Australia._%2821339175489%29.jpg" },
+            { name: "Petra", lat: 30.3285, lng: 35.4444, fact: "Famous for its stunning rock-cut architecture and sophisticated water conduit system.", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Treasury_petra_crop.jpeg/320px-Treasury_petra_crop.jpeg" }
         ];
 
         // Map Initialization
@@ -424,6 +465,9 @@
                     onEachFeature: onEachFeature
                 }).addTo(map);
 
+                // Initialize Landmarks
+                renderLandmarks();
+
                 // Update UI Header
                 updateDashboard();
                 
@@ -438,6 +482,67 @@
                 console.error("Error loading geographical data:", error);
                 document.getElementById('loader').innerHTML = `<h1 class="text-red-500 font-bold text-xl">Error loading map data. Please refresh.</h1>`;
             }
+        }
+
+        function renderLandmarks() {
+            state.landmarkLayer = L.layerGroup().addTo(map);
+            
+            const starIcon = L.divIcon({
+                html: '<i class="fa-solid fa-star text-yellow-400 drop-shadow-md text-2xl" style="-webkit-text-stroke: 1px #d97706; text-shadow: 0 2px 4px rgba(0,0,0,0.4);"></i>',
+                className: 'bg-transparent',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+
+            LANDMARKS.forEach(lm => {
+                const marker = L.marker([lm.lat, lm.lng], { icon: starIcon })
+                    .bindPopup(`
+                        <div class="text-center w-48 p-1">
+                            <img src="${lm.img}" class="w-full h-24 object-cover rounded mb-2 shadow-sm border border-slate-200">
+                            <h4 class="font-bold text-slate-800 text-sm mb-1">${lm.name}</h4>
+                            <p class="text-xs text-slate-500 leading-tight">${lm.fact}</p>
+                        </div>
+                    `, { className: 'custom-landmark-popup' });
+                
+                // Add hover tooltip for quick identification
+                marker.bindTooltip(`<b>${lm.name}</b>`, { direction: 'top', offset: [0, -10] });
+                
+                state.landmarkLayer.addLayer(marker);
+            });
+        }
+
+        async function getExchangeRate(currencyCode) {
+            // Check cache first
+            if (!state.exchangeRates) {
+                try {
+                    // Pulling free, non-authenticated rate relative to INR
+                    const res = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/inr.json');
+                    const data = await res.json();
+                    state.exchangeRates = data.inr;
+                } catch(e) {
+                    return null;
+                }
+            }
+            const rate = state.exchangeRates[currencyCode.toLowerCase()];
+            if (!rate) return null;
+            // The API returns how many units equal 1 INR. So we invert it (1/rate) to find out how many INR equal 1 unit.
+            return (1 / rate).toFixed(2);
+        }
+
+        function setFlashcardType(type) {
+            state.fcType = type;
+            const btnFlag = document.getElementById('btn-mode-flag');
+            const btnShape = document.getElementById('btn-mode-shape');
+            
+            if(type === 'flag') {
+                btnFlag.className = "px-4 py-1.5 bg-white shadow-sm rounded-md text-sm font-bold text-slate-800 transition-all";
+                btnShape.className = "px-4 py-1.5 text-slate-500 rounded-md text-sm font-bold hover:bg-slate-200 transition-all";
+            } else {
+                btnShape.className = "px-4 py-1.5 bg-white shadow-sm rounded-md text-sm font-bold text-slate-800 transition-all";
+                btnFlag.className = "px-4 py-1.5 text-slate-500 rounded-md text-sm font-bold hover:bg-slate-200 transition-all";
+            }
+            
+            nextFlashcard(); // Load new challenge
         }
 
         // Helper Function to fix the famous Natural Earth "-99" bug for countries with overseas territories
@@ -693,6 +798,29 @@
             
             const currs = data.currencies ? Object.values(data.currencies).map(c => `${c.name} (${c.symbol})`).join(', ') : 'N/A';
             document.getElementById('exp-curr').innerText = currs;
+            
+            const currRateEl = document.getElementById('exp-curr-rate');
+            currRateEl.innerText = ''; // Reset
+            
+            // Dynamic Currency fetching for INR
+            if (data.currencies) {
+                const codes = Object.keys(data.currencies);
+                if (codes.length > 0) {
+                    const mainCode = codes[0];
+                    if (mainCode === 'INR') {
+                        currRateEl.innerText = '₹1 INR = ₹1 INR';
+                    } else {
+                        currRateEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Fetching rate...';
+                        getExchangeRate(mainCode).then(rate => {
+                            if (rate) {
+                                currRateEl.innerText = `1 ${mainCode} ≈ ₹${rate} INR`;
+                            } else {
+                                currRateEl.innerText = 'Exchange rate unavailable';
+                            }
+                        });
+                    }
+                }
+            }
 
             // Generate Trivia
             document.getElementById('exp-trivia').innerText = generateTrivia(data);
@@ -896,8 +1024,21 @@
             
             state.flashcardCurrent = data;
 
-            document.getElementById('fc-flag').src = data.flags.png;
+            const flagImg = document.getElementById('fc-flag');
+            const shapeContainer = document.getElementById('fc-shape-container');
+            
             document.getElementById('fc-overlay').style.opacity = '0';
+            document.getElementById('fc-overlay-flag').classList.add('hidden'); // Reset flag on overlay
+
+            if (state.fcType === 'flag') {
+                flagImg.src = data.flags.png;
+                flagImg.classList.remove('hidden');
+                shapeContainer.classList.add('hidden');
+            } else {
+                flagImg.classList.add('hidden');
+                shapeContainer.classList.remove('hidden');
+                renderShape(data.cca3);
+            }
             
             // Reset input and UI
             const guessInput = document.getElementById('fc-guess');
@@ -982,6 +1123,13 @@
             document.getElementById('fc-answer-name').innerText = data.name.common;
             document.getElementById('fc-answer-capital').innerText = data.capital?.[0] || 'No Capital';
             
+            // Show the flag in the overlay if they were doing Shape Mode
+            if (state.fcType === 'shape') {
+                const overlayFlag = document.getElementById('fc-overlay-flag');
+                overlayFlag.src = data.flags.png;
+                overlayFlag.classList.remove('hidden');
+            }
+            
             const xpText = document.getElementById('fc-xp-award-text');
             if (xpText) {
                 xpText.innerText = wasGuessedCorrectly ? "+10 XP" : "+0 XP";
@@ -992,6 +1140,39 @@
             
             document.getElementById('fc-action-buttons').classList.add('hidden');
             document.getElementById('btn-next-fc').classList.remove('hidden');
+        }
+
+        function renderShape(countryCode) {
+            // Initialize mini map if not already done
+            if (!state.fcMap) {
+                state.fcMap = L.map('fc-shape-map', {
+                    zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, 
+                    boxZoom: false, keyboard: false, tap: false, touchZoom: false, attributionControl: false
+                }).setView([0,0], 2);
+            }
+
+            if (state.fcShapeLayer) {
+                state.fcMap.removeLayer(state.fcShapeLayer);
+            }
+
+            // Find feature in main map
+            let feature = null;
+            state.geoLayer.eachLayer(l => {
+                if (getCountryCode(l.feature.properties) === countryCode) feature = l.feature;
+            });
+
+            if (feature) {
+                // Draw pure black silhouette
+                state.fcShapeLayer = L.geoJSON(feature, {
+                    style: { fillColor: '#0f172a', color: '#0f172a', weight: 1, fillOpacity: 1 } 
+                }).addTo(state.fcMap);
+
+                // Small delay to ensure container layout is updated before fitting bounds perfectly
+                setTimeout(() => {
+                    state.fcMap.invalidateSize();
+                    state.fcMap.fitBounds(state.fcShapeLayer.getBounds(), { padding: [25, 25], animate: false });
+                }, 50);
+            }
         }
 
         function addXP(amount) {
