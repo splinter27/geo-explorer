@@ -40,7 +40,9 @@
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
         }
-        .bottom-sheet.collapsed { transform: translateY(calc(100% - 60px)); }
+        @media (max-width: 767px) {
+            .bottom-sheet.collapsed { transform: translateY(calc(100% - 60px)); }
+        }
         
         /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
@@ -763,6 +765,11 @@
             const sidebar = document.getElementById('sidebar');
             const handle = document.getElementById('drag-handle');
             
+            // Ensure sidebar is fully expanded on desktop on initial load
+            if (window.innerWidth >= 768) {
+                sidebar.classList.remove('collapsed');
+            }
+
             // Only add mobile logic if we are on a smaller screen
             // Tap to toggle
             handle.addEventListener('click', () => {
