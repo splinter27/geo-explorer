@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive World Map - Pro Edition</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            display: flex;
+            height: 100vh;
+            background-color: #f8fafc;
+            color: #1e293b;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #map {
+            flex: 1;
+            height: 100%;
+            background: #e2e8f0;
+            z-index: 1;
+        }
+
+        /* Sidebar Architecture */
+        #sidebar {
+            width: 400px;
+            background-color: #ffffff;
+            box-shadow: -4px 0 15px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid #cbd5e1;
+            z-index: 1001;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            background-color: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            position: relative;
+        }
+
+        .sidebar-header h2 {
+            font-size: 24px;
+            color: #0f172a;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        /* Region Select & Search UI */
+        .region-select {
+            width: 100%;
+            padding: 10px 14px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            background-color: #f8fafc;
+            color: #1e293b;
+            font-size: 14px;
+            font-weight: 500;
+            outline: none;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .region-select:focus {
+            border-color: #64748b;
+            background-color: #ffffff;
+        }
+
+        .search-container {
+            display: flex;
+            gap: 8px;
+            position: relative;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 10px 14px;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            background-color: #f8fafc;
+            color: #1e293b;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus { border-color: #64748b; background-color: #ffffff; }
+
+        .search-btn {
+            padding: 10px 16px;
+            background-color: #64748b;
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .search-btn:hover { background-color: #475569; }
+
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            width: calc(100% - 80px);
+            max-height: 200px;
+            overflow-y: auto;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 2000;
+            display: none;
+            margin-top: 4px;
+        }
+
+        .autocomplete-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
+        .autocomplete-item:hover { background-color: #f8fafc; color: #f97316; font-weight: 500; }
+
+        /* Sidebar Content */
+        .sidebar-content { padding: 20px; overflow-y: auto; flex: 1; }
+        .placeholder-text { color: #64748b; text-align: center; font-style: italic; margin-top: 40px; }
+
+        /* Sidebar Footer & Bottom Left Reset Button */
+        .sidebar-footer {
+            padding: 15px 20px;
+            background-color: #ffffff;
+            border-top: 1px solid #e2e8f0;
+            display: none; /* Hidden by default */
+            flex-shrink: 0;
+        }
+
+        .sidebar-footer.visible {
+            display: block;
+        }
+
+        .reset-map-btn {
+            width: 100%;
+            padding: 12px;
+            background-color: #f1f5f9;
+            color: #0f172a;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .reset-map-btn:hover {
+            background-color: #e2e8f0;
+            border-color: #94a3b8;
+        }
+
+        /* Loading Spinner */
+        .spinner-container { display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: 40px; gap: 15px; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top: 4px solid #f97316; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* UI Blocks */
+        .country-header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0; }
+        .country-flag { width: 80px; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }
+        .country-name-display { font-size: 20px; font-weight: bold; color: #0f172a; }
+
+        .info-group { margin-bottom: 12px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #64748b; }
+        .info-group.api-data { border-left-color: #f97316; }
+        .info-label { font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: bold; margin-bottom: 4px; letter-spacing: 0.5px; }
+        .info-value { font-size: 15px; color: #0f172a; font-weight: 500; }
+
+        /* Mobile View Toggle Button */
+        .mobile-toggle {
+            display: none; position: absolute; top: -40px; left: 50%; transform: translateX(-50%);
+            background: #ffffff; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 12px 12px 0 0;
+            padding: 8px 30px; cursor: pointer; z-index: 1002; box-shadow: 0 -4px 6px -2px rgba(0,0,0,0.05);
+            font-weight: bold; color: #64748b;
+        }
+
+        /* Responsive Breakpoints */
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            #sidebar {
+                width: 100%; height: 60vh; position: absolute; bottom: 0;
+                transform: translateY(calc(100% - 60px)); border-left: none;
+                border-top: 1px solid #cbd5e1; border-radius: 20px 20px 0 0;
+            }
+            #sidebar.expanded { transform: translateY(0); }
+            .mobile-toggle { display: block; }
+        }
+
+        /* Tooltip styling */
+        .custom-tooltip { background: #1e293b; color: white; border: none; border-radius: 4px; font-weight: bold; }
+        .leaflet-tooltip-left.custom-tooltip::before { border-left-color: #1e293b; }
+        .leaflet-tooltip-right.custom-tooltip::before { border-right-color: #1e293b; }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    
+    <div id="sidebar">
+        <button class="mobile-toggle" id="mobile-toggle">▲ Swipe Up</button>
+        <div class="sidebar-header">
+            <h2>World Explorer</h2>
+            <!-- Region/Continent Select Dropdown -->
+            <select id="region-select" class="region-select">
+                <option value="world">🗺️ Global View</option>
+                <option value="africa">Africa</option>
+                <option value="asia">Asia</option>
+                <option value="europe">Europe</option>
+                <option value="north_america">North America</option>
+                <option value="south_america">South America</option>
+                <option value="oceania">Oceania</option>
+            </select>
+
+            <div class="search-container">
+                <input type="text" id="search-input" class="search-input" placeholder="Search countries..." autocomplete="off">
+                <button id="search-btn" class="search-btn">Search</button>
+                <div id="autocomplete-list" class="autocomplete-dropdown"></div>
+            </div>
+        </div>
+        
+        <div class="sidebar-content" id="sidebar-content">
+            <p class="placeholder-text">Click on any country, select a region, or use the search bar above.</p>
+        </div>
+
+        <!-- NEW: Footer with Reset Button at the bottom left panel -->
+        <div class="sidebar-footer" id="sidebar-footer">
+            <button class="reset-map-btn" id="reset-map-btn">🌍 Reset Global View</button>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Data and Core Variables
+        const countryData = {
+            "India": { flag: "https://flagcdn.com/in.svg", capital: "New Delhi", capCoords: [28.6139, 77.2090], lang: "Hindi, English", currency: "Indian Rupee (INR)", religion: "Hinduism (~79%)", pop: "1.44 Billion", gdp: "$3.9 Trillion", area: "3,287,263 km²", food: "Biryani, Butter Chicken", celebrity: "Shah Rukh Khan, Virat Kohli", occupation: "Agriculture & Services" },
+            "United States of America": { flag: "https://flagcdn.com/us.svg", capital: "Washington, D.C.", capCoords: [38.9072, -77.0369], lang: "English", currency: "US Dollar ($)", religion: "Christianity (~65%)", pop: "340 Million", gdp: "$28.7 Trillion", area: "9,833,517 km²", food: "Burgers, Apple Pie", celebrity: "Tom Cruise, Taylor Swift", occupation: "Professional & Business Services" }
+        };
+
+        // Bounding boxes for Continents [ [SouthWest Lat, Lng], [NorthEast Lat, Lng] ]
+        const regionBounds = {
+            "africa": [[-35.0, -20.0], [38.0, 55.0]],
+            "asia": [[-10.0, 30.0], [80.0, 150.0]],
+            "europe": [[35.0, -15.0], [72.0, 45.0]],
+            "north_america": [[10.0, -170.0], [84.0, -50.0]],
+            "south_america": [[-56.0, -85.0], [15.0, -30.0]],
+            "oceania": [[-50.0, 110.0], [10.0, 180.0]]
+        };
+
+        const map = L.map('map', { center: [20, 0], zoom: 2.5, minZoom: 2, maxZoom: 10 });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO'
+        }).addTo(map);
+
+        let geojsonLayer;
+        let lastClickedLayer = null;
+        let highlightedRegionLayers = [];
+        let capitalMarker = null;
+        let searchIndex = [];
+        let regionMappingDb = {};
+
+        // Fetch Region Database on load to accurately highlight continents
+        fetch('https://restcountries.com/v3.1/all?fields=name,region,subregion')
+            .then(res => res.json())
+            .then(data => {
+                data.forEach(c => {
+                    const reg = c.region ? c.region.toLowerCase() : '';
+                    const sub = c.subregion ? c.subregion.toLowerCase() : '';
+                    if(c.name.common) regionMappingDb[c.name.common.toLowerCase()] = { region: reg, subregion: sub };
+                    if(c.name.official) regionMappingDb[c.name.official.toLowerCase()] = { region: reg, subregion: sub };
+                });
+                // Manual overrides for exact geojson string matches
+                regionMappingDb["united states of america"] = { region: "americas", subregion: "north america" };
+                regionMappingDb["russia"] = { region: "europe", subregion: "eastern europe" };
+            });
+
+        // UI Controls
+        const sidebar = document.getElementById('sidebar');
+        const toggleBtn = document.getElementById('mobile-toggle');
+        const resetBtn = document.getElementById('reset-map-btn');
+        const footerUi = document.getElementById('sidebar-footer');
+        const regionSelect = document.getElementById('region-select');
+        
+        toggleBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('expanded');
+            toggleBtn.textContent = sidebar.classList.contains('expanded') ? '▼ Swipe Down' : '▲ Swipe Up';
+        });
+
+        // Map Base Styling
+        function styleFeature(feature) {
+            return { color: '#64748b', weight: 1, fillColor: '#cbd5e1', fillOpacity: 0.1 };
+        }
+
+        // Fetch Boundaries
+        fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
+            .then(response => response.json())
+            .then(data => {
+                geojsonLayer = L.geoJSON(data, {
+                    style: styleFeature,
+                    onEachFeature: onEachFeature
+                }).addTo(map);
+
+                data.features.forEach(f => {
+                    const name = f.properties.ADMIN || f.properties.name;
+                    if (name && !searchIndex.includes(name)) searchIndex.push({ name: name, layer: f });
+                });
+                searchIndex.sort((a, b) => a.name.localeCompare(b.name));
+            });
+
+        // Hover & Click Interactions
+        function onEachFeature(feature, layer) {
+            const countryName = feature.properties.ADMIN || feature.properties.name;
+            layer.bindTooltip(countryName, { sticky: true, className: 'custom-tooltip' });
+
+            layer.on({
+                mouseover: function (e) {
+                    if (e.target !== lastClickedLayer && !highlightedRegionLayers.includes(e.target)) {
+                        e.target.setStyle({ weight: 2, fillColor: '#94a3b8', fillOpacity: 0.3, color: '#475569' });
+                        e.target.bringToFront();
+                    }
+                },
+                mouseout: function (e) {
+                    if (e.target !== lastClickedLayer) {
+                        if (highlightedRegionLayers.includes(e.target)) {
+                            // Revert to Teal if it belongs to active continent
+                            e.target.setStyle({ color: '#0284c7', weight: 2, fillColor: '#0284c7', fillOpacity: 0.15 });
+                        } else {
+                            geojsonLayer.resetStyle(e.target);
+                        }
+                    }
+                },
+                click: function (e) {
+                    selectCountry(layer, countryName);
+                    if(window.innerWidth <= 768 && !sidebar.classList.contains('expanded')) toggleBtn.click();
+                }
+            });
+        }
+
+        // Region Dropdown Logic with Border Highlighting
+        const regionQueryMap = {
+            "africa": { r: "africa", s: "" },
+            "asia": { r: "asia", s: "" },
+            "europe": { r: "europe", s: "" },
+            "north_america": { r: "americas", s: "north america" },
+            "south_america": { r: "americas", s: "south america" },
+            "oceania": { r: "oceania", s: "" }
+        };
+
+        regionSelect.addEventListener('change', function(e) {
+            const region = e.target.value;
+            
+            // Clear current highlights before applying new ones
+            clearHighlights();
+
+            if (region === 'world') {
+                resetMapState();
+            } else {
+                map.fitBounds(regionBounds[region], { padding: [20, 20], duration: 1.5 });
+                
+                // Highlight boundaries of all countries in the selected region
+                const targetReg = regionQueryMap[region];
+                
+                geojsonLayer.eachLayer(layer => {
+                    const name = (layer.feature.properties.ADMIN || layer.feature.properties.name).toLowerCase();
+                    const countryDbInfo = regionMappingDb[name];
+                    
+                    if (countryDbInfo) {
+                        const matchRegion = targetReg.r === countryDbInfo.region;
+                        const matchSub = targetReg.s === "" || targetReg.s === countryDbInfo.subregion;
+                        
+                        // Treat central america & caribbean as North America for visuals
+                        const isCentral = (targetReg.s === "north america" && (countryDbInfo.subregion === "central america" || countryDbInfo.subregion === "caribbean"));
+
+                        if (matchRegion && (matchSub || isCentral)) {
+                            // Apply Teal Continent Border Glow
+                            layer.setStyle({
+                                color: '#0284c7',
+                                weight: 2,
+                                fillColor: '#0284c7',
+                                fillOpacity: 0.15
+                            });
+                            highlightedRegionLayers.push(layer);
+                        }
+                    }
+                });
+
+                footerUi.classList.add('visible');
+                document.getElementById('sidebar-content').innerHTML = `
+                    <p class="placeholder-text" style="color:#0f172a; font-weight:bold; font-size:18px;">Exploring ${regionSelect.options[regionSelect.selectedIndex].text}</p>
+                    <div style="background:#e0f2fe; padding:10px; border-radius:6px; margin-top:15px; border-left:4px solid #0284c7;">
+                        <p style="color:#0369a1; font-size:14px;">The borders of this continent have been highlighted in teal.</p>
+                    </div>
+                    <p class="placeholder-text" style="margin-top:15px;">Select a specific country to pull its deep demographic profile.</p>
+                `;
+            }
+        });
+
+        function clearHighlights() {
+            if (lastClickedLayer) geojsonLayer.resetStyle(lastClickedLayer);
+            lastClickedLayer = null;
+            
+            highlightedRegionLayers.forEach(layer => geojsonLayer.resetStyle(layer));
+            highlightedRegionLayers = [];
+            
+            if (capitalMarker) map.removeLayer(capitalMarker);
+        }
+
+        // Selection Controller
+        function selectCountry(layer, countryName) {
+            clearHighlights(); // Clears continent teal lines to focus solely on the selected country
+
+            // Apply specific Orange highlight to single country
+            layer.setStyle({ weight: 3, fillOpacity: 0.2, color: '#f97316', fillColor: '#f97316' });
+            layer.bringToFront();
+            lastClickedLayer = layer;
+
+            map.fitBounds(layer.getBounds(), { padding: [30, 30] });
+            footerUi.classList.add('visible'); // Show sidebar footer reset button
+            updateSidebar(countryName);
+        }
+
+        // Reset Logic
+        function resetMapState() {
+            map.flyTo([20, 0], 2.5, { duration: 1.5 });
+            clearHighlights();
+            
+            document.getElementById('sidebar-content').innerHTML = '<p class="placeholder-text">View reset. Click on any country to explore.</p>';
+            regionSelect.value = 'world'; 
+            footerUi.classList.remove('visible'); // Hide bottom reset button
+        }
+
+        resetBtn.addEventListener('click', resetMapState);
+
+        // Sidebar Content Routing
+        function updateSidebar(name) {
+            if (capitalMarker) map.removeLayer(capitalMarker);
+            if (countryData[name]) renderLocalData(name, countryData[name]);
+            else fetchDataOnline(name);
+        }
+
+        // Search Autocomplete
+        const searchInput = document.getElementById('search-input');
+        const autoList = document.getElementById('autocomplete-list');
+
+        searchInput.addEventListener('input', function() {
+            const val = this.value.toLowerCase();
+            autoList.innerHTML = '';
+            if (!val) { autoList.style.display = 'none'; return; }
+
+            const matches = searchIndex.filter(item => item.name.toLowerCase().includes(val)).slice(0, 8);
+            if (matches.length > 0) {
+                autoList.style.display = 'block';
+                matches.forEach(match => {
+                    const div = document.createElement('div');
+                    div.className = 'autocomplete-item';
+                    div.textContent = match.name;
+                    div.addEventListener('click', () => {
+                        searchInput.value = match.name;
+                        autoList.style.display = 'none';
+                        executeSearch(match.name);
+                    });
+                    autoList.appendChild(div);
+                });
+            } else { autoList.style.display = 'none'; }
+        });
+
+        document.addEventListener('click', (e) => { if (e.target !== searchInput) autoList.style.display = 'none'; });
+
+        function executeSearch(forcedQuery = null) {
+            const query = (forcedQuery || searchInput.value).trim().toLowerCase();
+            if (!query) return;
+
+            let targetLayer = null;
+            let targetName = "";
+
+            geojsonLayer.eachLayer(function (layer) {
+                const adminName = (layer.feature.properties.ADMIN || "").toLowerCase();
+                const commonName = (layer.feature.properties.name || "").toLowerCase();
+                if (adminName === query || commonName === query) {
+                    targetLayer = layer; targetName = layer.feature.properties.ADMIN || layer.feature.properties.name;
+                }
+            });
+
+            if (targetLayer) {
+                selectCountry(targetLayer, targetName);
+                if(window.innerWidth <= 768 && !sidebar.classList.contains('expanded')) toggleBtn.click();
+            } else { alert(`"${searchInput.value}" not found on map.`); }
+        }
+
+        document.getElementById('search-btn').addEventListener('click', () => executeSearch());
+        searchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') executeSearch(); });
+
+        // Data Rendering (Local)
+        function renderLocalData(name, data) {
+            const contentEl = document.getElementById('sidebar-content');
+            contentEl.innerHTML = `
+                <div class="country-header">
+                    <img src="${data.flag}" class="country-flag" alt="Flag">
+                    <div class="country-name-display">${name}</div>
+                </div>
+                <div class="info-group"><div class="info-label">Capital City</div><div class="info-value">${data.capital}</div></div>
+                <div class="info-group"><div class="info-label">Language</div><div class="info-value">${data.lang}</div></div>
+                <div class="info-group"><div class="info-label">Currency</div><div class="info-value">${data.currency}</div></div>
+                <div class="info-group"><div class="info-label">Population</div><div class="info-value">${data.pop}</div></div>
+                <div class="info-group"><div class="info-label">GDP</div><div class="info-value">${data.gdp}</div></div>
+            `;
+            if (data.capCoords) {
+                capitalMarker = L.marker(data.capCoords).addTo(map).bindPopup(`<b>${data.capital}</b>`).openPopup();
+            }
+        }
+
+        // Live API Logic with CSS Spinner
+        function fetchDataOnline(countryName) {
+            const contentEl = document.getElementById('sidebar-content');
+            
+            contentEl.innerHTML = `
+                <div class="spinner-container">
+                    <div class="spinner"></div>
+                    <div class="placeholder-text">Syncing live data for ${countryName}...</div>
+                </div>
+            `;
+
+            fetch(`https://restcountries.com/v3.1/name/${encodeURIComponent(countryName)}`)
+                .then(res => { if (!res.ok) throw new Error(); return res.json(); })
+                .then(dataArray => {
+                    const item = dataArray.find(c => c.name.common.toLowerCase() === countryName.toLowerCase()) || dataArray[0];
+                    const capital = item.capital ? item.capital[0] : "N/A";
+                    const languages = item.languages ? Object.values(item.languages).join(', ') : "N/A";
+                    const area = item.area ? `${item.area.toLocaleString()} km²` : "N/A";
+                    const population = item.population ? item.population.toLocaleString() : "N/A";
+                    const flagUrl = item.flags?.svg || "";
+                    let currencyStr = "N/A";
+                    if (item.currencies) {
+                        const curKey = Object.keys(item.currencies)[0];
+                        currencyStr = `${item.currencies[curKey].name} (${item.currencies[curKey].symbol || ''})`;
+                    }
+
+                    contentEl.innerHTML = `
+                        <div class="country-header">
+                            ${flagUrl ? `<img src="${flagUrl}" class="country-flag" alt="Flag">` : ''}
+                            <div class="country-name-display">${countryName}</div>
+                        </div>
+                        <div class="info-group api-data"><div class="info-label">Capital City</div><div class="info-value">${capital}</div></div>
+                        <div class="info-group api-data"><div class="info-label">Primary Language</div><div class="info-value">${languages}</div></div>
+                        <div class="info-group api-data"><div class="info-label">Currency</div><div class="info-value">${currencyStr}</div></div>
+                        <div class="info-group api-data"><div class="info-label">Total Population</div><div class="info-value">${population}</div></div>
+                        <div class="info-group api-data"><div class="info-label">Total Area</div><div class="info-value">${area}</div></div>
+                    `;
+
+                    if (item.capitalInfo?.latlng) {
+                        capitalMarker = L.marker(item.capitalInfo.latlng).addTo(map).bindPopup(`<b>${capital}</b>`).openPopup();
+                    }
+                })
+                .catch(() => {
+                    contentEl.innerHTML = `<p class="placeholder-text" style="color:#dc2626;">Unable to sync database for "${countryName}".</p>`;
+                });
+        }
+    </script>
+</body>
+</html>
