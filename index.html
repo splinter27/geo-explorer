@@ -46,6 +46,13 @@
             .bottom-sheet.collapsed { transform: translateY(calc(100% - 60px)); }
         }
         
+        /* Desktop Collapse Styles */
+        @media (min-width: 768px) {
+            #sidebar { transition: margin-left 0.3s ease-in-out; }
+            .desktop-collapsed { margin-left: -420px !important; }
+            #map-controls-panel { transition: left 0.3s ease-in-out; }
+        }
+        
         /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -101,6 +108,11 @@
 
     <div id="sidebar" class="bottom-sheet fixed md:relative bottom-0 left-0 w-full md:w-[420px] bg-white h-[85vh] md:h-screen z-[1000] md:z-20 flex flex-col rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-slate-200 shrink-0">
         
+        <!-- Desktop Toggle Button -->
+        <button onclick="toggleDesktopSidebar()" id="desktop-toggle-btn" class="hidden md:flex items-center justify-center absolute top-1/2 -right-10 w-10 h-16 bg-white border border-slate-200 border-l-0 rounded-r-xl shadow-md z-[1000] text-slate-500 hover:text-geo-orange transition-colors cursor-pointer" style="transform: translateY(-50%);">
+            <i class="fa-solid fa-chevron-left transition-transform duration-300" id="desktop-toggle-icon"></i>
+        </button>
+
         <!-- Mobile Drag Handle -->
         <div id="drag-handle" class="w-full h-[60px] md:hidden flex items-center justify-center cursor-pointer">
             <div class="w-12 h-1.5 bg-slate-300 rounded-full"></div>
@@ -673,7 +685,7 @@
                         <p class="text-sm text-slate-500 mb-4">Fetching live data from RestCountries...</p>
                     `;
                     noDataMsg.classList.remove('hidden');
-                    openMobileSheet();
+                    openSidebar();
 
                     try {
                         if (cca3 === "UNK" || cca3 === "-99") throw new Error("Invalid ISO Code");
@@ -732,12 +744,12 @@
                 // Smoothly zoom in to the country boundaries
                 map.fitBounds(layer.getBounds(), { padding: [20, 20], maxZoom: 5 });
                 showExploreData(countryData);
-                openMobileSheet();
+                openSidebar();
             } else if (state.mode === 'quiz') {
                 checkQuizAnswer(cca3, e.originalEvent.clientX, e.originalEvent.clientY);
             } else if (state.mode === 'flashcard') {
                 // Ignore map clicks during flashcard mode to keep focus on sidebar
-                openMobileSheet();
+                openSidebar();
             }
         }
 
@@ -778,7 +790,7 @@
                 document.getElementById('explore-content').classList.add('hidden');
             }
             
-            openMobileSheet();
+            openSidebar();
         }
 
         function showExploreData(data) {
@@ -960,7 +972,7 @@
 
             // Close sheet on mobile so they can see map
             if (window.innerWidth < 768) {
-                closeMobileSheet();
+                closeSidebar();
             }
         }
 
@@ -1006,7 +1018,7 @@
                 state.quizTarget = null; // Lock guesses
                 state.quizTimeout = setTimeout(startQuiz, 3500); // Give a bit more time to read before switching
                 
-                openMobileSheet();
+                openSidebar();
             }
         }
 
@@ -1237,9 +1249,9 @@
             handle.addEventListener('click', () => {
                 if(window.innerWidth >= 768) return;
                 if(sidebar.classList.contains('collapsed')) {
-                    openMobileSheet();
+                    openSidebar();
                 } else {
-                    closeMobileSheet();
+                    closeSidebar();
                 }
             });
 
@@ -1253,9 +1265,9 @@
                 if(window.innerWidth >= 768) return;
                 const endY = e.changedTouches[0].clientY;
                 if(endY - startY > 50) {
-                    closeMobileSheet(); // Swiped down
+                    closeSidebar(); // Swiped down
                 } else if (startY - endY > 50) {
-                    openMobileSheet(); // Swiped up
+                    openSidebar(); // Swiped up
                 }
             }, {passive: true});
             
@@ -1270,16 +1282,47 @@
             }
         }
 
-        function openMobileSheet() {
+        function openSidebar() {
             if(window.innerWidth < 768) {
                 document.getElementById('sidebar').classList.remove('collapsed');
+            } else {
+                const sidebar = document.getElementById('sidebar');
+                if(sidebar.classList.contains('desktop-collapsed')) {
+                    toggleDesktopSidebar();
+                }
             }
         }
 
-        function closeMobileSheet() {
+        function closeSidebar() {
             if(window.innerWidth < 768) {
                 document.getElementById('sidebar').classList.add('collapsed');
+            } else {
+                const sidebar = document.getElementById('sidebar');
+                if(!sidebar.classList.contains('desktop-collapsed')) {
+                    toggleDesktopSidebar();
+                }
             }
+        }
+
+        function toggleDesktopSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const controls = document.getElementById('map-controls-panel');
+            const icon = document.getElementById('desktop-toggle-icon');
+            
+            sidebar.classList.toggle('desktop-collapsed');
+            
+            if(sidebar.classList.contains('desktop-collapsed')) {
+                controls.classList.remove('md:left-[444px]');
+                controls.classList.add('md:left-4');
+                icon.classList.replace('fa-chevron-left', 'fa-chevron-right');
+            } else {
+                controls.classList.remove('md:left-4');
+                controls.classList.add('md:left-[444px]');
+                icon.classList.replace('fa-chevron-right', 'fa-chevron-left');
+            }
+            
+            // Allow transition to finish then fix Leaflet map size
+            setTimeout(() => { if(map) map.invalidateSize(); }, 300);
         }
 
         function searchCountry() {
@@ -1402,7 +1445,7 @@
                 let noDataMsg = document.getElementById('no-data-msg');
                 if(noDataMsg) noDataMsg.classList.add('hidden');
                 
-                if (window.innerWidth < 768) closeMobileSheet();
+                if (window.innerWidth < 768) closeSidebar();
             }
         }
 
